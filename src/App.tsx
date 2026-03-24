@@ -294,11 +294,11 @@ export default function App() {
       - Target Word Count: ${state.wordCount} words.
       - Author/Business Context: ${state.authorContext || "N/A"}
 
-      Return JSON: { "metaTitle": "...", "metaDescription": "...", "content": "Markdown..." }
+      Return JSON: { "metaTitle": "...", "metaDescription": "...", "content": "Markdown content with proper newlines (\\n) for paragraphs and tables..." }
     `;
 
     const guestPostPrompt = `
-      As an elite Guest Post Contributor with 20 years of experience, write a high-quality GUEST POST titled: "${state.selectedTitle}".
+      As an expert Guest Post Writer who specializes in clear, simple, and high-impact writing, write a GUEST POST titled: "${state.selectedTitle}".
       
       STRICT GUEST POSTING PRINCIPLES (MANDATORY):
       1. CONTEXT SHIFT: Write for the HOST WEBSITE audience (${state.hostNiche || "external audience"}), NOT the brand's own audience. The article must feel like it belongs naturally on a third-party site.
@@ -306,21 +306,44 @@ export default function App() {
       3. NARRATIVE: Use STRICT THIRD-PERSON ONLY. NO "I", "Me", "My", "We", "Our".
       4. BACKLINK INTEGRATION: Weave the backlink ([${state.anchorText}](${state.backlinkUrl})) naturally into the body (2nd or 3rd paragraph). It must look like a helpful reference, not a forced insertion.
       5. INTRO STYLE: Start with a problem or industry insight relevant to the host audience. Do NOT start with definitions or generic explanations.
-      6. CONTENT STRUCTURE & READABILITY (CRITICAL):
-          - Use SHORT paragraphs (max 3-4 sentences).
+      6. STRUCTURE:
+          - Start with H1 (The Selected Title).
+          - Follow with a bolded **AI Overview** (70-80 words) providing a high-level summary of the topic.
+          - Follow with "Introduction" heading and main content.
+      7. CONTENT QUALITY GUIDELINES (ELITE HUMAN STANDARDS):
+          - OPTIMIZE FOR BERT/MUM: Focus on context, semantic relevance, and natural keyword integration.
+          - HIGH BURSTINESS: Ensure significant variation in sentence lengths and structures.
+          - MODERATE PERPLEXITY: Vary vocabulary and sentence complexity to mimic human unpredictability.
+          - UNPREDICTABLE TRANSITIONS: Avoid robotic openers/closers like "In conclusion" or "Let's explore".
+          - SHOW, DON'T TELL: Use a mix of concrete examples and abstract insights.
+          - EMOTIONAL NUANCE: Include metaphors, analogies, and cultural references to build connection.
+          - VARIED TONE: Use inspiration, wit, empathy, or light sarcasm where appropriate for the audience.
+          - NO AI PHRASING: Avoid generic phrases like "In this article", "AI tools", or "Let's dive in".
+          - STRONG HOOKS: Start and end with meaningful statements, avoiding formulaic hooks.
+          - READABILITY TARGET (CRITICAL): STRICTLY MAINTAIN GRADE 5–6 LEVEL. This is the most important rule. Use very simple, clear, and punchy language. Avoid complex vocabulary or long, winding sentences. Write like you are explaining to a 10-year-old but with professional insights.
+          - SENTENCE STRUCTURE: Use short, impactful sentences (average 10-12 words). Avoid nested clauses or complex conjunctions.
+          - VOCABULARY: Use common, everyday words. Avoid "utilize", "leverage", "comprehensive", etc. Use "use", "get", "full".
+          - SCIENTIFIC DEPTH: Reference scientific details or research papers but explain them in extremely simple, easy-to-understand terms.
+          - NON-PROMOTIONAL: Focus on providing value to the host audience, not selling.
+          - HUMAN PHRASING: Use contractions naturally (don't, can't, won't) and avoid overly safe or polite AI-style talk.
+          - ORGANIC FLOW: Avoid symmetrical paragraph lengths; let the structure flow naturally and unpredictably.
+          - CREATIVE SYNONYMS: Avoid repeating exact words; use a fresh and varied vocabulary.
+          - HIDDEN AI: Never reveal or imply that the content is AI-generated.
+          - SEMANTIC KEYWORDS: Integrate keywords organically in context; NO STUFFING.
+          - EMOTIONALLY ENGAGING: Ensure the piece is intellectually and emotionally stimulating, not just a data dump.
+      8. CONTENT STRUCTURE & READABILITY (CRITICAL):
+          - Use SHORT paragraphs (max 2-3 sentences).
           - Use frequent subheadings (H2, H3) to break up text.
           - Use bullet points and numbered lists for actionable advice.
-          - **INFOGRAPHIC ALTERNATIVE**: Include at least one Markdown Table to represent data, comparisons, or frameworks.
+          - **INFOGRAPHIC ALTERNATIVE**: Include at least one Markdown Table to represent data, comparisons, or frameworks. Ensure the table is properly formatted with headers, a separator row (---), and each row on a new line.
           - **VISUAL BOXES**: Include at least one "Key Takeaways" or "Expert Insight" box using Markdown blockquotes (>).
-          - Avoid long academic explanations; focus on high-impact insights.
-      7. BRAND MENTION RULE: Mention the brand (${state.websiteUrl}) only once if absolutely necessary, and keep it subtle/non-promotional. It should feel like a reference, not self-promotion.
-      8. CTA RULE: NO aggressive CTA. Use only a soft, informational closing.
-      9. EXTERNAL LINKING: Quote and link to 3-4 different authoritative external sources (e.g., Wikipedia, Forbes, Industry Journals) to show broad research and value.
-      10. SEO OPTIMIZATION: Naturally include primary and secondary keywords. NO KEYWORD STUFFING.
-      11. DIFFERENTIATION: This is NOT a blog post. Blog writing is for brand authority; Guest Posting is for external value and backlink authority.
-      12. AUTHOR BIO: At the very end of the content, include a professional "About the Author" bio (30-35 words). It should highlight expertise relevant to the topic and subtly mention their role at ${state.websiteUrl || "the company"}.
-      13. META DATA: SEO-optimized Meta Title (55-60 chars) and Meta Description (155-160 chars). Title and Meta Title MUST be different.
-      14. WORD COUNT: The content MUST be approximately ${state.wordCount} words. Provide a full-length, detailed article that meets this target.
+      9. BRAND MENTION RULE: Mention the brand (${state.websiteUrl}) only once if absolutely necessary, and keep it subtle/non-promotional. It should feel like a reference, not self-promotion.
+      10. CTA RULE: NO aggressive CTA. Use only a soft, informational closing.
+      11. EXTERNAL LINKING: Quote and link to 3-4 different authoritative external sources (e.g., Wikipedia, Forbes, Industry Journals) to show broad research and value.
+      12. DIFFERENTIATION: This is NOT a blog post. Blog writing is for brand authority; Guest Posting is for external value and backlink authority.
+      13. AUTHOR BIO: At the very end of the content, include a professional "About the Author" bio (30-35 words). It should highlight expertise relevant to the topic and subtly mention their role at ${state.websiteUrl || "the company"}.
+      14. META DATA: SEO-optimized Meta Title (55-60 chars) and Meta Description (155-160 chars). Title and Meta Title MUST be different.
+      15. WORD COUNT: The content MUST be approximately ${state.wordCount} words. Provide a full-length, detailed article that meets this target.
 
       INPUT HANDLING:
       - If Author/Business Context sounds promotional, convert it into neutral expertise positioning.
@@ -334,7 +357,7 @@ export default function App() {
       - Target Word Count: ${state.wordCount} words.
       - Author/Business Context: ${state.authorContext || "N/A"}
 
-      Return JSON: { "metaTitle": "...", "metaDescription": "...", "content": "Markdown..." }
+      Return JSON: { "metaTitle": "...", "metaDescription": "...", "content": "Markdown content with proper newlines (\\n) for paragraphs and tables..." }
     `;
 
     const prompt = isGuestPost ? guestPostPrompt : blogPrompt;
