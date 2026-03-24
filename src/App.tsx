@@ -45,9 +45,11 @@ interface AppState {
   metaTitle: string;
   metaDescription: string;
   auditResults: AuditResults | null;
+  refinementPrompt: string;
   isGeneratingTitles: boolean;
   isGeneratingVariations: boolean;
   isGeneratingContent: boolean;
+  isRefining: boolean;
   isGeneratingFaqs: boolean;
   isGeneratingSchema: boolean;
   editingTitleIndex: number | null;
@@ -92,9 +94,11 @@ export default function App() {
     metaTitle: '',
     metaDescription: '',
     auditResults: null,
+    refinementPrompt: '',
     isGeneratingTitles: false,
     isGeneratingVariations: false,
     isGeneratingContent: false,
+    isRefining: false,
     isGeneratingFaqs: false,
     isGeneratingSchema: false,
     editingTitleIndex: null,
@@ -396,6 +400,62 @@ export default function App() {
           setState(s => ({ ...s, error: "Failed to generate content after multiple attempts. Please try again.", isGeneratingContent: false }));
         }
       }
+    }
+  };
+
+  const handleRefineContent = async () => {
+    if (!state.refinementPrompt.trim()) return;
+    setState(s => ({ ...s, isRefining: true, error: null }));
+
+    try {
+      const isGuestPost = state.contentType === 'guest-post';
+      
+      const refinePrompt = `
+        You are an expert editor. I have a ${state.contentType} that needs specific changes.
+        
+        ORIGINAL CONTENT:
+        ${state.generatedContent}
+        
+        USER'S REFINEMENT INSTRUCTION:
+        "${state.refinementPrompt}"
+        
+        TASK:
+        1. Apply the user's instruction to the content.
+        2. MAINTAIN ALL ORIGINAL QUALITY STANDARDS:
+           ${isGuestPost 
+             ? "Strict Grade 5-6 readability, BERT/MUM optimization, high burstiness, no robotic phrasing, proper Markdown tables, neutral third-person tone." 
+             : "Grade 5-6 readability, BERT/MUM optimization, human tone, natural keyword integration, people-first approach."}
+        3. Keep the same structure (H1, AI Overview, Introduction, etc.).
+        4. If the user asks for a specific change, prioritize it while keeping the rest of the content high-quality.
+        
+        Return the updated content in the same JSON format:
+        { "metaTitle": "...", "metaDescription": "...", "content": "Updated Markdown content with proper newlines (\\n) for paragraphs and tables..." }
+      `;
+
+      const response = await ai.models.generateContent({
+        model: GEMINI_MODEL,
+        contents: refinePrompt,
+        config: { responseMimeType: "application/json" }
+      });
+
+      const data = JSON.parse(response.text || "{}");
+      if (!data.content) throw new Error("Empty content");
+
+      const content = data.content;
+      const audit = calculateAuditMetrics(content);
+
+      setState(s => ({ 
+        ...s, 
+        generatedContent: content, 
+        metaTitle: data.metaTitle || s.metaTitle,
+        metaDescription: data.metaDescription || s.metaDescription,
+        auditResults: audit,
+        isRefining: false,
+        refinementPrompt: ''
+      }));
+    } catch (err) {
+      console.error(err);
+      setState(s => ({ ...s, error: "Failed to refine content. Please try again.", isRefining: false }));
     }
   };
 
@@ -963,6 +1023,42 @@ export default function App() {
                     <div className="markdown-body">
                       <ReactMarkdown>{state.generatedContent}</ReactMarkdown>
                     </div>
+                  </div>
+                </section>
+
+                {/* Content Refinement Section */}
+                <section className="bg-white rounded-2xl border border-zinc-200 p-6 shadow-sm space-y-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Sparkles className="w-5 h-5 text-blue-500" />
+                    <h3 className="text-sm font-bold text-zinc-700">Refine Content</h3>
+                  </div>
+                  <p className="text-[10px] text-zinc-500 font-medium uppercase tracking-wider">
+                    Want to change something? Ask for a specific edit below.
+                  </p>
+                  <div className="relative">
+                    <textarea
+                      value={state.refinementPrompt}
+                      onChange={(e) => setState(s => ({ ...s, refinementPrompt: e.target.value }))}
+                      placeholder="Example: 'Make the introduction more punchy' or 'Add a section about the benefits of X'..."
+                      className="w-full bg-zinc-50 border border-zinc-200 rounded-xl p-4 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all min-h-[100px] resize-none"
+                    />
+                    <button
+                      onClick={handleRefineContent}
+                      disabled={state.isRefining || !state.refinementPrompt.trim()}
+                      className="absolute bottom-4 right-4 bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 hover:bg-blue-700 disabled:opacity-50 shadow-lg transition-all"
+                    >
+                      {state.isRefining ? (
+                        <>
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          Refining...
+                        </>
+                      ) : (
+                        <>
+                          <RefreshCw className="w-3 h-3" />
+                          Update Content
+                        </>
+                      )}
+                    </button>
                   </div>
                 </section>
               </motion.div>
