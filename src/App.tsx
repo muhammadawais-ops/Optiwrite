@@ -4,7 +4,7 @@
  */
 
 import React, { useState } from 'react';
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import ReactMarkdown from 'react-markdown';
 import { 
   PenTool, 
@@ -20,13 +20,27 @@ import {
   FileText,
   ExternalLink,
   Copy,
-  RefreshCw
+  RefreshCw,
+  Trash2,
+  Plus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
 
 // --- Types ---
 type ContentType = 'blog' | 'guest-post';
+
+interface ReferenceLink {
+  url: string;
+  context: string;
+}
+
+interface HistoryItem {
+  id: string;
+  title: string;
+  timestamp: number;
+  state: Partial<AppState>;
+}
 
 interface AppState {
   contentType: ContentType;
@@ -54,6 +68,9 @@ interface AppState {
   isGeneratingSchema: boolean;
   editingTitleIndex: number | null;
   manualSecondaryKeywords: string;
+  referenceLinks: ReferenceLink[];
+  history: HistoryItem[];
+  currentSessionId: string | null;
   error: string | null;
 }
 
@@ -76,35 +93,179 @@ interface AuditResults {
 
 const GEMINI_MODEL = "gemini-3-flash-preview";
 
+const INITIAL_STATE: AppState = {
+  contentType: 'blog',
+  primaryKeyword: '',
+  websiteUrl: '',
+  wordCount: 1000,
+  authorContext: '',
+  backlinkUrl: '',
+  anchorText: '',
+  hostNiche: '',
+  titles: [],
+  selectedTitle: '',
+  semanticVariations: [],
+  selectedVariations: [],
+  generatedContent: '',
+  metaTitle: '',
+  metaDescription: '',
+  auditResults: null,
+  refinementPrompt: '',
+  isGeneratingTitles: false,
+  isGeneratingVariations: false,
+  isGeneratingContent: false,
+  isRefining: false,
+  isGeneratingFaqs: false,
+  isGeneratingSchema: false,
+  editingTitleIndex: null,
+  manualSecondaryKeywords: '',
+  referenceLinks: [{ url: '', context: '' }],
+  history: [],
+  currentSessionId: null,
+  error: null,
+};
+
 export default function App() {
-  const [state, setState] = useState<AppState>({
-    contentType: 'blog',
-    primaryKeyword: '',
-    websiteUrl: '',
-    wordCount: 1000,
-    authorContext: '',
-    backlinkUrl: '',
-    anchorText: '',
-    hostNiche: '',
-    titles: [],
-    selectedTitle: '',
-    semanticVariations: [],
-    selectedVariations: [],
-    generatedContent: '',
-    metaTitle: '',
-    metaDescription: '',
-    auditResults: null,
-    refinementPrompt: '',
-    isGeneratingTitles: false,
-    isGeneratingVariations: false,
-    isGeneratingContent: false,
-    isRefining: false,
-    isGeneratingFaqs: false,
-    isGeneratingSchema: false,
-    editingTitleIndex: null,
-    manualSecondaryKeywords: '',
-    error: null,
+  const [state, setState] = useState<AppState>(() => {
+    const savedState = localStorage.getItem('optiwrite_state');
+    if (savedState) {
+      try {
+        const parsed = JSON.parse(savedState);
+        return {
+          ...INITIAL_STATE,
+          ...parsed,
+          isGeneratingTitles: false,
+          isGeneratingVariations: false,
+          isGeneratingContent: false,
+          isRefining: false,
+          isGeneratingFaqs: false,
+          isGeneratingSchema: false,
+          error: null
+        };
+      } catch (e) {
+        console.error("Failed to parse saved state", e);
+      }
+    }
+    return INITIAL_STATE;
   });
+
+  // --- Persistence ---
+  React.useEffect(() => {
+    const { 
+      isGeneratingTitles, 
+      isGeneratingVariations, 
+      isGeneratingContent, 
+      isRefining, 
+      isGeneratingFaqs, 
+      isGeneratingSchema,
+      error,
+      ...persistentState 
+    } = state;
+    localStorage.setItem('optiwrite_state', JSON.stringify(persistentState));
+  }, [state]);
+
+  const createNewSession = () => {
+    setState(s => ({
+      ...s,
+      contentType: 'blog',
+      primaryKeyword: '',
+      websiteUrl: '',
+      wordCount: 1000,
+      authorContext: '',
+      backlinkUrl: '',
+      anchorText: '',
+      hostNiche: '',
+      titles: [],
+      selectedTitle: '',
+      semanticVariations: [],
+      selectedVariations: [],
+      generatedContent: '',
+      metaTitle: '',
+      metaDescription: '',
+      auditResults: null,
+      refinementPrompt: '',
+      manualSecondaryKeywords: '',
+      referenceLinks: [{ url: '', context: '' }],
+      currentSessionId: null,
+      error: null,
+    }));
+  };
+
+  const getHistoryItem = (currentState: AppState): HistoryItem => {
+    const sessionId = currentState.currentSessionId || Math.random().toString(36).substring(7);
+    const title = currentState.selectedTitle || currentState.primaryKeyword || "Untitled Generation";
+    
+    return {
+      id: sessionId,
+      title,
+      timestamp: Date.now(),
+      state: {
+        contentType: currentState.contentType,
+        primaryKeyword: currentState.primaryKeyword,
+        websiteUrl: currentState.websiteUrl,
+        wordCount: currentState.wordCount,
+        authorContext: currentState.authorContext,
+        backlinkUrl: currentState.backlinkUrl,
+        anchorText: currentState.anchorText,
+        hostNiche: currentState.hostNiche,
+        titles: currentState.titles,
+        selectedTitle: currentState.selectedTitle,
+        semanticVariations: currentState.semanticVariations,
+        selectedVariations: currentState.selectedVariations,
+        generatedContent: currentState.generatedContent,
+        metaTitle: currentState.metaTitle,
+        metaDescription: currentState.metaDescription,
+        auditResults: currentState.auditResults,
+        manualSecondaryKeywords: currentState.manualSecondaryKeywords,
+        referenceLinks: currentState.referenceLinks,
+      }
+    };
+  };
+
+  const updateHistory = (s: AppState, updatedState: Partial<AppState>): AppState => {
+    const nextState = { ...s, ...updatedState };
+    if (!nextState.generatedContent && !nextState.primaryKeyword) return nextState;
+
+    const historyItem = getHistoryItem(nextState);
+    const existingIndex = s.history.findIndex(h => h.id === historyItem.id);
+    let newHistory = [...s.history];
+    
+    if (existingIndex >= 0) {
+      newHistory[existingIndex] = historyItem;
+    } else {
+      newHistory = [historyItem, ...newHistory];
+    }
+
+    return {
+      ...nextState,
+      history: newHistory,
+      currentSessionId: historyItem.id
+    };
+  };
+
+  const loadSession = (session: HistoryItem) => {
+    setState(s => ({
+      ...s,
+      ...session.state,
+      currentSessionId: session.id,
+      isGeneratingTitles: false,
+      isGeneratingVariations: false,
+      isGeneratingContent: false,
+      isRefining: false,
+      isGeneratingFaqs: false,
+      isGeneratingSchema: false,
+      error: null
+    }));
+  };
+
+  const deleteSession = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    setState(s => ({
+      ...s,
+      history: s.history.filter(h => h.id !== id),
+      currentSessionId: s.currentSessionId === id ? null : s.currentSessionId
+    }));
+  };
 
   const loadTemplate = () => {
     const template = `- Author Niche: 
@@ -226,7 +387,7 @@ export default function App() {
       });
 
       const titles = JSON.parse(response.text || "[]");
-      setState(s => ({ ...s, titles, isGeneratingTitles: false }));
+      setState(s => updateHistory(s, { titles, isGeneratingTitles: false }));
     } catch (err) {
       console.error(err);
       setState(s => ({ ...s, error: "Failed to generate titles. Please try again.", isGeneratingTitles: false }));
@@ -254,7 +415,7 @@ export default function App() {
       });
 
       const variations = JSON.parse(response.text || "[]");
-      setState(s => ({ ...s, semanticVariations: variations, isGeneratingVariations: false }));
+      setState(s => updateHistory(s, { semanticVariations: variations, isGeneratingVariations: false }));
     } catch (err) {
       console.error(err);
       setState(s => ({ ...s, error: "Failed to generate variations.", isGeneratingVariations: false }));
@@ -288,13 +449,22 @@ export default function App() {
           - Follow with a bolded **AI Overview** (70-80 words) answering the main query.
           - Follow with "Introduction" heading and main content.
       9. CALL TO ACTION (CTA): Natural CTA at the end encouraging visits to ${state.websiteUrl || "the website"}.
-      10. EXTERNAL LINKING: Quote and link to 2 authoritative sites.
-      11. META DATA: SEO-optimized Meta Title (55-60 chars) and Meta Description (155-160 chars). Title and Meta Title MUST be different.
+      10. META DATA: SEO-optimized Meta Title (55-60 chars) and Meta Description (155-160 chars). Title and Meta Title MUST be different.
 
       Context:
       - Primary Keyword: ${state.primaryKeyword}
       - Selected Semantic Variations: ${state.selectedVariations.join(', ')}
       - Manual Secondary Keywords: ${manualKeywords.join(', ')}
+      - Reference Sources (CRITICAL): ${JSON.stringify(state.referenceLinks.filter(l => l.url.trim()))}
+      
+      INSTRUCTIONS FOR SOURCES:
+      - HYPERLINKING (CRITICAL): DO NOT paste raw URLs in parentheses. Instead, embed the "url" into a relevant, natural anchor text within the sentence (e.g., [according to this study](url)).
+      - Use the provided "context" for facts, stats, and data points.
+      - REWRITE the context completely to match the tool's tone and ensure 100% PLAGIARISM-FREE content. 
+      - Keep the numbers/stats accurate but change the phrasing.
+      - NATURAL DISTRIBUTION: Distribute these citations NATURALLY throughout the entire article. Spread them out (e.g., one in the introduction, one in the middle, one in the final sections). DO NOT cluster them all in the first few paragraphs.
+      - CONTEXTUAL LOGIC: Place the link exactly where the data or fact is mentioned.
+      
       - Target Word Count: ${state.wordCount} words.
       - Author/Business Context: ${state.authorContext || "N/A"}
 
@@ -343,8 +513,7 @@ export default function App() {
           - **VISUAL BOXES**: Include at least one "Key Takeaways" or "Expert Insight" box using Markdown blockquotes (>).
       9. BRAND MENTION RULE: Mention the brand (${state.websiteUrl}) only once if absolutely necessary, and keep it subtle/non-promotional. It should feel like a reference, not self-promotion.
       10. CTA RULE: NO aggressive CTA. Use only a soft, informational closing.
-      11. EXTERNAL LINKING: Quote and link to 3-4 different authoritative external sources (e.g., Wikipedia, Forbes, Industry Journals) to show broad research and value.
-      12. DIFFERENTIATION: This is NOT a blog post. Blog writing is for brand authority; Guest Posting is for external value and backlink authority.
+      11. DIFFERENTIATION: This is NOT a blog post. Blog writing is for brand authority; Guest Posting is for external value and backlink authority.
       13. AUTHOR BIO: At the very end of the content, include a professional "About the Author" bio (30-35 words). It should highlight expertise relevant to the topic and subtly mention their role at ${state.websiteUrl || "the company"}.
       14. META DATA: SEO-optimized Meta Title (55-60 chars) and Meta Description (155-160 chars). Title and Meta Title MUST be different.
       15. WORD COUNT: The content MUST be approximately ${state.wordCount} words. Provide a full-length, detailed article that meets this target.
@@ -357,6 +526,16 @@ export default function App() {
       - Primary Keyword: ${state.primaryKeyword}
       - Selected Semantic Variations: ${state.selectedVariations.join(', ')}
       - Manual Secondary Keywords: ${manualKeywords.join(', ')}
+      - Reference Sources (CRITICAL): ${JSON.stringify(state.referenceLinks.filter(l => l.url.trim()))}
+      
+      INSTRUCTIONS FOR SOURCES:
+      - HYPERLINKING (CRITICAL): DO NOT paste raw URLs in parentheses. Instead, embed the "url" into a relevant, natural anchor text within the sentence (e.g., [as reported by industry experts](url)).
+      - Use the provided "context" for facts, stats, and data points.
+      - REWRITE the context completely to match the tool's tone and ensure 100% PLAGIARISM-FREE content. 
+      - Keep the numbers/stats accurate but change the phrasing.
+      - NATURAL DISTRIBUTION: Distribute these citations NATURALLY throughout the entire article. Spread them out. DO NOT cluster them at the beginning.
+      - CONTEXTUAL LOGIC: Place the link exactly where the data or fact is mentioned.
+
       - Host Website Niche: ${state.hostNiche}
       - Target Word Count: ${state.wordCount} words.
       - Author/Business Context: ${state.authorContext || "N/A"}
@@ -375,7 +554,10 @@ export default function App() {
         const response = await ai.models.generateContent({
           model: GEMINI_MODEL,
           contents: prompt,
-          config: { responseMimeType: "application/json" }
+          config: { 
+            responseMimeType: "application/json",
+            thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH }
+          }
         });
 
         const data = JSON.parse(response.text || "{}");
@@ -384,8 +566,7 @@ export default function App() {
         const content = data.content;
         const audit = calculateAuditMetrics(content);
 
-        setState(s => ({ 
-          ...s, 
+        setState(s => updateHistory(s, { 
           generatedContent: content, 
           metaTitle: data.metaTitle || "",
           metaDescription: data.metaDescription || "",
@@ -444,8 +625,7 @@ export default function App() {
       const content = data.content;
       const audit = calculateAuditMetrics(content);
 
-      setState(s => ({ 
-        ...s, 
+      setState(s => updateHistory(s, { 
         generatedContent: content, 
         metaTitle: data.metaTitle || s.metaTitle,
         metaDescription: data.metaDescription || s.metaDescription,
@@ -478,8 +658,7 @@ export default function App() {
       });
 
       const faqs = response.text || "";
-      setState(s => ({ 
-        ...s, 
+      setState(s => updateHistory(s, { 
         generatedContent: s.generatedContent + "\n\n" + faqs,
         isGeneratingFaqs: false 
       }));
@@ -507,8 +686,7 @@ export default function App() {
       });
 
       const schema = response.text || "";
-      setState(s => ({ 
-        ...s, 
+      setState(s => updateHistory(s, { 
         generatedContent: s.generatedContent + "\n\n## Schema Markup\n\n" + schema,
         isGeneratingSchema: false 
       }));
@@ -523,27 +701,87 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-zinc-50 flex flex-col">
-      {/* Header */}
-      <header className="bg-white border-b border-zinc-200 py-6 px-8 sticky top-0 z-10 shadow-sm">
-        <div className="max-w-7xl mx-auto flex justify-between items-center">
+    <div className="min-h-screen bg-zinc-50 flex">
+      {/* Sidebar */}
+      <aside className="w-64 bg-zinc-900 text-zinc-400 flex flex-col border-r border-zinc-800 sticky top-0 h-screen shrink-0 hidden md:flex">
+        <div className="p-4 border-b border-zinc-800">
+          <button 
+            onClick={createNewSession}
+            className="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-100 rounded-lg py-2.5 px-4 text-sm font-semibold flex items-center gap-2 transition-all border border-zinc-700"
+          >
+            <Plus className="w-4 h-4" /> New Generation
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar">
+          <div className="px-3 py-2 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Your History</div>
+          {state.history.length === 0 ? (
+            <div className="px-3 py-8 text-center text-xs text-zinc-600 italic">No history yet</div>
+          ) : (
+            state.history.map((item) => (
+              <button
+                key={item.id}
+                onClick={() => loadSession(item)}
+                className={cn(
+                  "w-full text-left px-3 py-2.5 rounded-lg text-xs font-medium transition-all group flex items-center justify-between",
+                  state.currentSessionId === item.id 
+                    ? "bg-zinc-800 text-zinc-100 shadow-sm" 
+                    : "hover:bg-zinc-800/50 hover:text-zinc-300"
+                )}
+              >
+                <span className="truncate flex-1 mr-2">{item.title}</span>
+                <Trash2 
+                  className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 hover:text-red-400 transition-all" 
+                  onClick={(e) => deleteSession(e, item.id)}
+                />
+              </button>
+            ))
+          )}
+        </div>
+
+        <div className="p-4 border-t border-zinc-800 bg-zinc-900/50">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-zinc-900 rounded-xl flex items-center justify-center">
-              <PenTool className="text-white w-6 h-6" />
+            <div className="w-8 h-8 bg-zinc-800 rounded-lg flex items-center justify-center">
+              <PenTool className="text-zinc-400 w-4 h-4" />
             </div>
-            <div>
-              <h1 className="text-2xl font-bold tracking-tight text-zinc-900">Optiwrite</h1>
-              <p className="text-xs font-medium text-zinc-500 uppercase tracking-widest">by Muhammad Awais Ramzan</p>
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] font-bold text-zinc-100 truncate">Optiwrite Pro</p>
+              <p className="text-[9px] text-zinc-500 truncate">v2.5.0 Stable</p>
             </div>
-          </div>
-          <div className="flex items-center gap-4 text-sm font-medium text-zinc-500">
-            <span className="flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4 text-green-500" /> E-E-A-T Optimized</span>
-            <span className="flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4 text-green-500" /> People-First</span>
           </div>
         </div>
-      </header>
+      </aside>
 
-      <main className="flex-1 max-w-7xl mx-auto w-full p-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Header */}
+        <header className="bg-white border-b border-zinc-200 py-6 px-8 sticky top-0 z-10 shadow-sm">
+          <div className="max-w-7xl mx-auto flex justify-between items-center">
+            <div className="flex items-center gap-3">
+              <div className="md:hidden w-10 h-10 bg-zinc-900 rounded-xl flex items-center justify-center">
+                <PenTool className="text-white w-6 h-6" />
+              </div>
+              <div className="hidden md:block">
+                <h1 className="text-2xl font-bold tracking-tight text-zinc-900">Optiwrite</h1>
+                <p className="text-xs font-medium text-zinc-500 uppercase tracking-widest">by Muhammad Awais Ramzan</p>
+              </div>
+              <div className="md:hidden">
+                <h1 className="text-xl font-bold tracking-tight text-zinc-900">Optiwrite</h1>
+              </div>
+            </div>
+            <div className="flex items-center gap-4 text-sm font-medium text-zinc-500">
+              <span className="hidden sm:flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4 text-green-500" /> E-E-A-T Optimized</span>
+              <span className="hidden sm:flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4 text-green-500" /> People-First</span>
+              <button 
+                onClick={createNewSession}
+                className="md:hidden p-2 bg-zinc-900 text-white rounded-lg"
+              >
+                <Plus className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+        </header>
+
+        <main className="flex-1 max-w-7xl mx-auto w-full p-4 md:p-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* Left Column: Inputs */}
         <div className="lg:col-span-4 space-y-6">
           <section className="bg-white rounded-2xl border border-zinc-200 p-6 shadow-sm space-y-6">
@@ -780,7 +1018,7 @@ export default function App() {
                       >
                         <div className="flex-1 flex items-center gap-3">
                           <button
-                            onClick={() => setState(s => ({ ...s, selectedTitle: title, editingTitleIndex: null }))}
+                            onClick={() => setState(s => updateHistory(s, { selectedTitle: title, editingTitleIndex: null }))}
                             className="flex-1 text-left"
                           >
                             {isEditing ? (
@@ -793,8 +1031,7 @@ export default function App() {
                                 onChange={(e) => {
                                   const newTitles = [...state.titles];
                                   newTitles[i] = e.target.value;
-                                  setState(s => ({ 
-                                    ...s, 
+                                  setState(s => updateHistory(s, { 
                                     titles: newTitles,
                                     selectedTitle: s.selectedTitle === title ? e.target.value : s.selectedTitle 
                                   }));
@@ -827,7 +1064,7 @@ export default function App() {
                             </button>
                           )}
                           <button
-                            onClick={() => setState(s => ({ ...s, selectedTitle: title, editingTitleIndex: null }))}
+                            onClick={() => setState(s => updateHistory(s, { selectedTitle: title, editingTitleIndex: null }))}
                           >
                             <ChevronRight className={cn("w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity", isSelected && "opacity-100")} />
                           </button>
@@ -838,16 +1075,72 @@ export default function App() {
                 </div>
 
                 {state.selectedTitle && (
-                  <div className="mt-6 pt-6 border-t border-zinc-100 flex justify-end">
-                    <button 
-                      onClick={generateFinalContent}
-                      disabled={state.isGeneratingContent}
-                      className="bg-zinc-900 text-white rounded-lg px-8 py-3 text-sm font-bold flex items-center gap-2 hover:bg-zinc-800 disabled:opacity-50 shadow-xl shadow-zinc-200"
-                    >
-                      {state.isGeneratingContent ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
-                      Generate Full Content
-                    </button>
-                  </div>
+                  <motion.div 
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mt-6 pt-6 border-t border-zinc-100 space-y-4"
+                  >
+                    <div className="flex justify-between items-center">
+                      <h3 className="text-sm font-bold text-zinc-500 uppercase flex items-center gap-2">
+                        <ExternalLink className="w-4 h-4" /> Reference Links (Perplexity/Sources)
+                      </h3>
+                      <button 
+                        onClick={() => setState(s => ({ ...s, referenceLinks: [...s.referenceLinks, { url: '', context: '' }] }))}
+                        className="text-[10px] font-bold text-blue-600 hover:text-blue-700 uppercase tracking-tighter flex items-center gap-1"
+                      >
+                        <RefreshCw className="w-3 h-3" /> Add More
+                      </button>
+                    </div>
+                    
+                    <div className="space-y-4">
+                      {state.referenceLinks.map((link, idx) => (
+                        <div key={idx} className="bg-zinc-50 border border-zinc-200 rounded-xl p-4 space-y-3 relative group">
+                          <div className="flex gap-2">
+                            <input 
+                              type="url"
+                              placeholder="Source URL (e.g. https://...)"
+                              className="flex-1 bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 transition-all"
+                              value={link.url}
+                              onChange={(e) => {
+                                const newLinks = [...state.referenceLinks];
+                                newLinks[idx].url = e.target.value;
+                                setState(s => ({ ...s, referenceLinks: newLinks }));
+                              }}
+                            />
+                            {state.referenceLinks.length > 1 && (
+                              <button 
+                                onClick={() => setState(s => ({ ...s, referenceLinks: s.referenceLinks.filter((_, i) => i !== idx) }))}
+                                className="p-2 text-zinc-400 hover:text-red-500 transition-colors"
+                              >
+                                <RefreshCw className="w-4 h-4 rotate-45" />
+                              </button>
+                            )}
+                          </div>
+                          <textarea 
+                            placeholder="Paste the paragraph/context from Perplexity here..."
+                            className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 transition-all h-20 resize-none"
+                            value={link.context}
+                            onChange={(e) => {
+                              const newLinks = [...state.referenceLinks];
+                              newLinks[idx].context = e.target.value;
+                              setState(s => ({ ...s, referenceLinks: newLinks }));
+                            }}
+                          />
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="pt-4 flex justify-end">
+                      <button 
+                        onClick={generateFinalContent}
+                        disabled={state.isGeneratingContent}
+                        className="bg-zinc-900 text-white rounded-lg px-8 py-3 text-sm font-bold flex items-center gap-2 hover:bg-zinc-800 disabled:opacity-50 shadow-xl shadow-zinc-200"
+                      >
+                        {state.isGeneratingContent ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+                        Generate Full Content
+                      </button>
+                    </div>
+                  </motion.div>
                 )}
               </motion.section>
             )}
@@ -1113,6 +1406,7 @@ export default function App() {
         </div>
       </footer>
     </div>
+  </div>
   );
 }
 
