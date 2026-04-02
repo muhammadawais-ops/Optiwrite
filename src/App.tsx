@@ -6,6 +6,7 @@
 import React, { useState } from 'react';
 import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { 
   PenTool, 
   Search, 
@@ -1511,7 +1512,7 @@ export default function App() {
                   </div>
                   <div className="p-8 max-h-[800px] overflow-y-auto">
                     <div className="markdown-body">
-                      <ReactMarkdown>{state.generatedContent}</ReactMarkdown>
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{state.generatedContent}</ReactMarkdown>
                     </div>
                   </div>
                 </section>
