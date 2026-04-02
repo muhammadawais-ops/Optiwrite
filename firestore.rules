@@ -1,0 +1,122 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId}
+    // Fields:
+    //   - uid: string (required) - Firebase Auth UID
+    //   - email: string (required) - User email
+    //   - displayName: string (optional)
+    //   - role: string (required, enum: ["user", "admin"])
+    //   - credits: number (required) - Free trial credits
+    //   - subscriptionStatus: string (required, enum: ["free", "pending", "active", "expired"])
+    //   - expiryDate: string (optional, ISO 8601)
+    //   - createdAt: string (required, ISO 8601)
+    //
+    // Collection: payments
+    // Document ID: {paymentId}
+    // Fields:
+    //   - uid: string (required) - User UID
+    //   - userEmail: string (required)
+    //   - whatsappNumber: string (required) - User's WhatsApp number
+    //   - senderName: string (optional)
+    //   - proofUrl: string (optional) - URL to screenshot (legacy)
+    //   - status: string (required, enum: ["pending", "approved", "rejected"])
+    //   - amount: number (optional)
+    //   - submittedAt: string (required, ISO 8601)
+    //   - verifiedAt: string (optional, ISO 8601)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         request.auth.token.email == "muhammadawais@carpediem.company");
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'role', 'credits', 'subscriptionStatus', 'createdAt']) &&
+             data.uid is string &&
+             data.email is string &&
+             data.role in ['user', 'admin'] &&
+             data.credits is number &&
+             data.subscriptionStatus in ['free', 'pending', 'active', 'expired'] &&
+             data.createdAt is string;
+    }
+
+    function isValidPayment(data) {
+      return data.keys().hasAll(['uid', 'userEmail', 'whatsappNumber', 'status', 'submittedAt']) &&
+             data.uid is string &&
+             data.userEmail is string &&
+             data.whatsappNumber is string &&
+             data.whatsappNumber.size() >= 10 &&
+             data.whatsappNumber.size() <= 25 &&
+             data.status in ['pending', 'approved', 'rejected'] &&
+             data.submittedAt is string;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      
+      // Users can create their own profile with 'user' role and 'free' status
+      // EXCEPT the default admin who can create with 'admin' role
+      allow create: if isOwner(userId) && 
+                      isValidUser(request.resource.data) && 
+                      (request.resource.data.role == 'user' || (request.auth.token.email == "muhammadawais@carpediem.company" && request.resource.data.role == 'admin')) &&
+                      request.resource.data.subscriptionStatus == 'free';
+      
+      // Users can update their own profile but NOT their role (unless admin)
+      // They can change subscriptionStatus to 'pending' to request verification
+      allow update: if (isOwner(userId) && 
+                        isValidUser(request.resource.data) && 
+                        request.resource.data.role == resource.data.role &&
+                        (request.resource.data.subscriptionStatus == resource.data.subscriptionStatus || 
+                         request.resource.data.subscriptionStatus == 'pending')) || 
+                       isAdmin();
+      
+      // Only admins can delete users
+      allow delete: if isAdmin();
+    }
+
+    match /payments/{paymentId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.uid == request.auth.uid);
+      
+      // Users can submit payments, but only with 'pending' status
+      allow create: if isAuthenticated() && 
+                      isValidPayment(request.resource.data) && 
+                      request.resource.data.uid == request.auth.uid &&
+                      request.resource.data.status == 'pending';
+      
+      // Only admins can update payment status
+      allow update: if isAdmin() && isValidPayment(request.resource.data);
+      
+      allow delete: if isAdmin();
+    }
+
+    match /teams/{domain} {
+      // Users can read team data if their email domain matches
+      allow read: if isAuthenticated() && request.auth.token.email.matches(".*@" + domain + "$");
+      // Only admins can manage teams
+      allow write: if isAdmin();
+    }
+  }
+}

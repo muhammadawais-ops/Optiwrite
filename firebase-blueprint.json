@@ -1,0 +1,62 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "Stores user subscription status and credits.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "role": { "type": "string", "enum": ["user", "admin"] },
+        "credits": { "type": "integer", "description": "Free trial credits remaining" },
+        "subscriptionStatus": { "type": "string", "enum": ["free", "pending", "active", "expired"] },
+        "expiryDate": { "type": "string", "format": "date-time", "description": "Subscription end date" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "role", "credits", "subscriptionStatus"]
+    },
+    "Payment": {
+      "title": "Payment Proof",
+      "description": "Stores manual payment proof for admin verification.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "proofUrl": { "type": "string", "description": "URL to the uploaded screenshot" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "amount": { "type": "integer" },
+        "submittedAt": { "type": "string", "format": "date-time" },
+        "verifiedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "userEmail", "proofUrl", "status", "submittedAt"]
+    },
+    "Team": {
+      "title": "Team Subscription",
+      "description": "Stores domain-based team subscription details.",
+      "type": "object",
+      "properties": {
+        "expiryDate": { "type": "string", "format": "date-time" },
+        "credits": { "type": "integer" },
+        "ownerUid": { "type": "string" },
+        "planName": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["expiryDate", "credits", "ownerUid", "planName"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile document"
+    },
+    "/payments/{paymentId}": {
+      "schema": "Payment",
+      "description": "Payment proof submission"
+    },
+    "/teams/{domain}": {
+      "schema": "Team",
+      "description": "Domain-based team subscription"
+    }
+  }
+}

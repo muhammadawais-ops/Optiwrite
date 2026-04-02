@@ -22,10 +22,25 @@ import {
   Copy,
   RefreshCw,
   Trash2,
-  Plus
+  Plus,
+  LogOut,
+  LogIn,
+  Shield,
+  User,
+  Lock,
+  Calendar,
+  X
 } from 'lucide-react';
+import { doc, updateDoc } from 'firebase/firestore';
+import { db } from './firebase';
+import { format, parseISO } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
+import { useAuth } from './contexts/AuthContext';
+import { AuthModal } from './components/AuthModal';
+import { PaymentModal } from './components/PaymentModal';
+import { AdminPanel } from './components/AdminPanel';
+import { logout } from './firebase';
 
 // --- Types ---
 type ContentType = 'blog' | 'guest-post';
@@ -126,6 +141,29 @@ const INITIAL_STATE: AppState = {
 };
 
 export default function App() {
+  const { user, profile, teamProfile, isAdmin, isSubscribed, hasCredits, useCredit, checkAccess, loading: authLoading } = useAuth();
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false);
+  const [showWelcomePopup, setShowWelcomePopup] = useState(false);
+
+  React.useEffect(() => {
+    if (profile?.showWelcomePopup) {
+      setShowWelcomePopup(true);
+      // Reset the flag in Firestore
+      const resetFlag = async () => {
+        try {
+          await updateDoc(doc(db, 'users', profile.uid), {
+            showWelcomePopup: false
+          });
+        } catch (err) {
+          console.error("Failed to reset welcome popup flag:", err);
+        }
+      };
+      resetFlag();
+    }
+  }, [profile]);
+
   const [state, setState] = useState<AppState>(() => {
     const savedState = localStorage.getItem('optiwrite_state');
     if (savedState) {
@@ -163,6 +201,8 @@ export default function App() {
     } = state;
     localStorage.setItem('optiwrite_state', JSON.stringify(persistentState));
   }, [state]);
+
+  const manualKeywords = state.manualSecondaryKeywords.split(',').map(k => k.trim()).filter(k => k);
 
   const createNewSession = () => {
     setState(s => ({
@@ -364,8 +404,14 @@ export default function App() {
       return;
     }
 
+    if (!checkAccess()) {
+      setIsPaymentModalOpen(true);
+      return;
+    }
+
     setState(s => ({ ...s, isGeneratingTitles: true, error: null }));
     try {
+      await useCredit();
       const prompt = `
         As an expert SEO Content Strategist, generate 5 high-performing, click-worthy (but not clickbait) SEO titles for a ${state.contentType} about "${state.primaryKeyword}".
         
@@ -388,9 +434,10 @@ export default function App() {
 
       const titles = JSON.parse(response.text || "[]");
       setState(s => updateHistory(s, { titles, isGeneratingTitles: false }));
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      setState(s => ({ ...s, error: "Failed to generate titles. Please try again.", isGeneratingTitles: false }));
+      const errorMessage = typeof err === 'string' ? err : (err?.message || JSON.stringify(err));
+      setState(s => ({ ...s, error: errorMessage || "Failed to generate titles. Please try again.", isGeneratingTitles: false }));
     }
   };
 
@@ -400,8 +447,14 @@ export default function App() {
       return;
     }
 
+    if (!checkAccess()) {
+      setIsPaymentModalOpen(true);
+      return;
+    }
+
     setState(s => ({ ...s, isGeneratingVariations: true, error: null }));
     try {
+      await useCredit();
       const prompt = `
         Generate 10 semantic variations and LSI (Latent Semantic Indexing) keywords for the primary keyword: "${state.primaryKeyword}".
         These should help in content optimization and covering the topic comprehensively for Google's Helpful Content update.
@@ -416,9 +469,10 @@ export default function App() {
 
       const variations = JSON.parse(response.text || "[]");
       setState(s => updateHistory(s, { semanticVariations: variations, isGeneratingVariations: false }));
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      setState(s => ({ ...s, error: "Failed to generate variations.", isGeneratingVariations: false }));
+      const errorMessage = typeof err === 'string' ? err : (err?.message || JSON.stringify(err));
+      setState(s => ({ ...s, error: errorMessage || "Failed to generate variations.", isGeneratingVariations: false }));
     }
   };
 
@@ -428,10 +482,16 @@ export default function App() {
       return;
     }
 
+    if (!checkAccess()) {
+      setIsPaymentModalOpen(true);
+      return;
+    }
+
     setState(s => ({ ...s, isGeneratingContent: true, error: null }));
     
-    const manualKeywords = state.manualSecondaryKeywords ? state.manualSecondaryKeywords.split(',').map(k => k.trim()).filter(k => k) : [];
-    const isGuestPost = state.contentType === 'guest-post';
+    try {
+      await useCredit();
+      const isGuestPost = state.contentType === 'guest-post';
 
     const blogPrompt = `
       As an elite SEO Content Writer with 20 years of experience, write a high-quality, "people-first" BLOG POST titled: "${state.selectedTitle}".
@@ -574,21 +634,33 @@ export default function App() {
           isGeneratingContent: false 
         }));
         return; // Success
-      } catch (err) {
+      } catch (err: any) {
         attempts++;
         console.error(`Attempt ${attempts} failed:`, err);
         if (attempts === maxAttempts) {
-          setState(s => ({ ...s, error: "Failed to generate content after multiple attempts. Please try again.", isGeneratingContent: false }));
+          const errorMessage = typeof err === 'string' ? err : (err?.message || JSON.stringify(err));
+          setState(s => ({ ...s, error: `Failed to generate content after multiple attempts: ${errorMessage}`, isGeneratingContent: false }));
         }
       }
+    }
+    } catch (err: any) {
+      console.error(err);
+      const errorMessage = typeof err === 'string' ? err : (err?.message || JSON.stringify(err));
+      setState(s => ({ ...s, error: errorMessage || "Failed to process generation. Please check your credits.", isGeneratingContent: false }));
     }
   };
 
   const handleRefineContent = async () => {
     if (!state.refinementPrompt.trim()) return;
+    if (!checkAccess()) {
+      setIsPaymentModalOpen(true);
+      return;
+    }
+
     setState(s => ({ ...s, isRefining: true, error: null }));
 
     try {
+      await useCredit();
       const isGuestPost = state.contentType === 'guest-post';
       
       const refinePrompt = `
@@ -633,15 +705,23 @@ export default function App() {
         isRefining: false,
         refinementPrompt: ''
       }));
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      setState(s => ({ ...s, error: "Failed to refine content. Please try again.", isRefining: false }));
+      const errorMessage = typeof err === 'string' ? err : (err?.message || JSON.stringify(err));
+      setState(s => ({ ...s, error: errorMessage || "Failed to refine content. Please try again.", isRefining: false }));
     }
   };
 
   const generateFaqs = async () => {
+    if (!state.generatedContent) return;
+    if (!checkAccess()) {
+      setIsPaymentModalOpen(true);
+      return;
+    }
+
     setState(s => ({ ...s, isGeneratingFaqs: true, error: null }));
     try {
+      await useCredit();
       const prompt = `
         Based on the following content titled "${state.selectedTitle}", generate a section with 5-6 FAQs addressing real-time user queries.
         Use a professional yet conversational tone.
@@ -662,15 +742,23 @@ export default function App() {
         generatedContent: s.generatedContent + "\n\n" + faqs,
         isGeneratingFaqs: false 
       }));
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      setState(s => ({ ...s, error: "Failed to generate FAQs.", isGeneratingFaqs: false }));
+      const errorMessage = typeof err === 'string' ? err : (err?.message || JSON.stringify(err));
+      setState(s => ({ ...s, error: errorMessage || "Failed to generate FAQs.", isGeneratingFaqs: false }));
     }
   };
 
   const generateSchema = async () => {
+    if (!state.generatedContent) return;
+    if (!checkAccess()) {
+      setIsPaymentModalOpen(true);
+      return;
+    }
+
     setState(s => ({ ...s, isGeneratingSchema: true, error: null }));
     try {
+      await useCredit();
       const prompt = `
         Based on the following content titled "${state.selectedTitle}", generate a valid JSON-LD FAQ Schema markup.
         
@@ -690,9 +778,10 @@ export default function App() {
         generatedContent: s.generatedContent + "\n\n## Schema Markup\n\n" + schema,
         isGeneratingSchema: false 
       }));
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      setState(s => ({ ...s, error: "Failed to generate Schema.", isGeneratingSchema: false }));
+      const errorMessage = typeof err === 'string' ? err : (err?.message || JSON.stringify(err));
+      setState(s => ({ ...s, error: errorMessage || "Failed to generate Schema.", isGeneratingSchema: false }));
     }
   };
 
@@ -740,15 +829,64 @@ export default function App() {
         </div>
 
         <div className="p-4 border-t border-zinc-800 bg-zinc-900/50">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-zinc-800 rounded-lg flex items-center justify-center">
-              <PenTool className="text-zinc-400 w-4 h-4" />
+          {user ? (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-zinc-800 rounded-lg flex items-center justify-center overflow-hidden">
+                  {user.photoURL ? (
+                    <img src={user.photoURL} alt="Avatar" className="w-full h-full object-cover" />
+                  ) : (
+                    <User className="text-zinc-400 w-4 h-4" />
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] font-bold text-zinc-100 truncate">{user.displayName || user.email}</p>
+                  <p className="text-[9px] text-zinc-500 truncate">
+                    {isAdmin ? 'Unlimited Credits' : 
+                     (teamProfile ? `${teamProfile.credits} Team Credits` : 
+                      (isSubscribed ? `${profile?.planName || 'Pro'} Plan: ${profile?.credits || 0} Credits` : `${profile?.credits || 0} Credits Left`))}
+                  </p>
+                  {isSubscribed && (profile?.expiryDate || teamProfile?.expiryDate) && (
+                    <p className="text-[8px] text-green-500 font-bold flex items-center gap-1 mt-0.5">
+                      <Calendar className="w-2 h-2" /> Expires: {format(parseISO(profile?.expiryDate || teamProfile?.expiryDate), 'MMM d, yyyy')}
+                    </p>
+                  )}
+                </div>
+                <button 
+                  onClick={() => logout()}
+                  className="p-1.5 text-zinc-500 hover:text-red-400 transition-colors"
+                  title="Logout"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              
+              {!isSubscribed && (
+                <button
+                  onClick={() => setIsPaymentModalOpen(true)}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold py-2 rounded-lg transition-all flex items-center justify-center gap-2"
+                >
+                  <Sparkles className="w-3 h-3" /> Upgrade to Pro
+                </button>
+              )}
+
+              {isAdmin && (
+                <button
+                  onClick={() => setIsAdminPanelOpen(true)}
+                  className="w-full bg-red-600/20 hover:bg-red-600/30 text-red-400 text-[10px] font-bold py-2 rounded-lg transition-all flex items-center justify-center gap-2 border border-red-600/30"
+                >
+                  <Shield className="w-3 h-3" /> Admin Panel
+                </button>
+              )}
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-[10px] font-bold text-zinc-100 truncate">Optiwrite Pro</p>
-              <p className="text-[9px] text-zinc-500 truncate">v2.5.0 Stable</p>
-            </div>
-          </div>
+          ) : (
+            <button
+              onClick={() => setIsAuthModalOpen(true)}
+              className="w-full bg-zinc-100 hover:bg-white text-zinc-900 text-[10px] font-bold py-2 rounded-lg transition-all flex items-center justify-center gap-2"
+            >
+              <LogIn className="w-3 h-3" /> Sign In
+            </button>
+          )}
         </div>
       </aside>
 
@@ -769,8 +907,33 @@ export default function App() {
               </div>
             </div>
             <div className="flex items-center gap-4 text-sm font-medium text-zinc-500">
-              <span className="hidden sm:flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4 text-green-500" /> E-E-A-T Optimized</span>
-              <span className="hidden sm:flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4 text-green-500" /> People-First</span>
+              {user ? (
+                <div className="flex items-center gap-4">
+                  <div className="hidden sm:flex flex-col items-end">
+                    <span className="text-[10px] font-bold text-zinc-900 leading-none">{user.displayName}</span>
+                    <span className="text-[9px] text-zinc-500 mt-1">
+                      {isAdmin ? 'Unlimited Access' : 
+                       (teamProfile ? 'Team Subscription' : 
+                        (isSubscribed ? `${profile?.planName || 'Pro'} Subscription: ${profile?.credits || 0} Credits` : `${profile?.credits || 0} Credits Remaining`))}
+                    </span>
+                    {isSubscribed && (profile?.expiryDate || teamProfile?.expiryDate) && (
+                      <span className="text-[8px] text-green-600 font-bold mt-0.5">
+                        Expires: {format(parseISO(profile?.expiryDate || teamProfile?.expiryDate), 'MMM d, yyyy')}
+                      </span>
+                    )}
+                  </div>
+                  <div className="w-8 h-8 bg-zinc-100 rounded-full overflow-hidden border border-zinc-200">
+                    <img src={user.photoURL || ''} alt="Avatar" className="w-full h-full object-cover" />
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setIsAuthModalOpen(true)}
+                  className="bg-zinc-900 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-zinc-800 transition-all"
+                >
+                  Sign In
+                </button>
+              )}
               <button 
                 onClick={createNewSession}
                 className="md:hidden p-2 bg-zinc-900 text-white rounded-lg"
@@ -781,7 +944,41 @@ export default function App() {
           </div>
         </header>
 
-        <main className="flex-1 max-w-7xl mx-auto w-full p-4 md:p-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
+        <main className="flex-1 max-w-7xl mx-auto w-full p-4 md:p-8 grid grid-cols-1 lg:grid-cols-12 gap-8 relative">
+          {(!user || (!isSubscribed && !hasCredits)) && (
+            <div className="absolute inset-0 z-20 bg-zinc-50/60 backdrop-blur-[2px] flex items-center justify-center p-8">
+              <motion.div 
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-white border border-zinc-200 rounded-3xl p-8 shadow-2xl max-w-md text-center"
+              >
+                <div className="w-16 h-16 bg-zinc-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                  <Lock className="w-8 h-8 text-zinc-400" />
+                </div>
+                <h3 className="text-xl font-black text-zinc-900">Tool Locked</h3>
+                <p className="text-sm text-zinc-500 mt-2 mb-8">
+                  {!user 
+                    ? "Please sign in to start using Optiwrite. You'll get 3 free credits!" 
+                    : "You've used all your free credits. Upgrade to Pro for unlimited access."}
+                </p>
+                {!user ? (
+                  <button
+                    onClick={() => setIsAuthModalOpen(true)}
+                    className="w-full bg-zinc-900 text-white font-bold py-4 rounded-2xl hover:bg-zinc-800 transition-all active:scale-95 flex items-center justify-center gap-2"
+                  >
+                    <LogIn className="w-5 h-5" /> Sign In Now
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setIsPaymentModalOpen(true)}
+                    className="w-full bg-blue-600 text-white font-bold py-4 rounded-2xl hover:bg-blue-700 transition-all active:scale-95 flex items-center justify-center gap-2"
+                  >
+                    <Sparkles className="w-5 h-5" /> Upgrade to Pro
+                  </button>
+                )}
+              </motion.div>
+            </div>
+          )}
         {/* Left Column: Inputs */}
         <div className="lg:col-span-4 space-y-6">
           <section className="bg-white rounded-2xl border border-zinc-200 p-6 shadow-sm space-y-6">
@@ -1405,6 +1602,61 @@ export default function App() {
           </div>
         </div>
       </footer>
+
+      {/* Modals */}
+      <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} />
+      <PaymentModal isOpen={isPaymentModalOpen} onClose={() => setIsPaymentModalOpen(false)} />
+      <AdminPanel isOpen={isAdminPanelOpen} onClose={() => setIsAdminPanelOpen(false)} />
+
+      {/* Welcome Popup */}
+      <AnimatePresence>
+        {showWelcomePopup && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="bg-white border border-zinc-200 rounded-3xl p-8 shadow-2xl max-w-md w-full text-center relative overflow-hidden"
+            >
+              <div className="absolute top-0 left-0 w-full h-2 bg-green-500" />
+              <button 
+                onClick={() => setShowWelcomePopup(false)}
+                className="absolute top-4 right-4 p-2 text-zinc-400 hover:text-zinc-600 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                <Sparkles className="w-10 h-10 text-green-600" />
+              </div>
+
+              <h2 className="text-2xl font-black text-zinc-900 mb-2">Congratulations!</h2>
+              <p className="text-zinc-600 mb-8">
+                Your payment has been verified. You now have **{profile?.planName || 'Pro'} Plan** access to Optiwrite for 1 month!
+              </p>
+
+              <div className="bg-green-50 rounded-2xl p-4 mb-8 flex items-center justify-center gap-3 text-green-700 font-bold text-sm">
+                <Calendar className="w-5 h-5" />
+                Valid until: {profile?.expiryDate ? format(parseISO(profile.expiryDate), 'MMMM d, yyyy') : '1 month from now'}
+              </div>
+
+              <button
+                onClick={() => setShowWelcomePopup(false)}
+                className="w-full bg-zinc-900 text-white font-bold py-4 rounded-2xl hover:bg-zinc-800 transition-all active:scale-95 shadow-lg shadow-zinc-900/20"
+              >
+                Start Writing Now
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Global Loading Overlay */}
+      {authLoading && (
+        <div className="fixed inset-0 z-[100] bg-white flex items-center justify-center">
+          <Loader2 className="w-10 h-10 text-zinc-900 animate-spin" />
+        </div>
+      )}
     </div>
   </div>
   );
