@@ -517,6 +517,8 @@ export default function App() {
       10. META DATA: SEO-optimized Meta Title (55-60 chars) and Meta Description (155-160 chars). Title and Meta Title MUST be different.
       11. PARAGRAPH LIMIT: No paragraph should exceed 300 characters. Keep them short and punchy.
       12. BULLET POINTS: Use bullet points and numbered lists naturally where possible to improve readability.
+      13. BRAND MENTIONS: Mention the brand/website (${state.websiteUrl || "the brand"}) naturally 3-4 times throughout the content to build authority and recognition.
+      14. CASE STUDY: Include at least one realistic, non-fake case study or success story related to the topic. Example: "When a client came to us with [problem], we implemented [solution] and saw [result]." Make it feel authentic and experience-driven.
 
       Context:
       - Primary Keyword: ${state.primaryKeyword}
@@ -586,6 +588,8 @@ export default function App() {
       15. WORD COUNT: The content MUST be approximately ${state.wordCount} words. Provide a full-length, detailed article that meets this target.
       16. PARAGRAPH LIMIT: No paragraph should exceed 300 characters. Keep them short and punchy.
       17. BULLET POINTS: Use bullet points and numbered lists naturally where possible to improve readability.
+      18. BRAND MENTIONS: Mention the brand/website (${state.websiteUrl || "the brand"}) naturally 2-3 times throughout the content.
+      19. CASE STUDY: Include a brief, realistic case study or example to demonstrate expertise (E-E-A-T).
 
       INPUT HANDLING:
       - If Author/Business Context sounds promotional, convert it into neutral expertise positioning.
