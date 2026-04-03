@@ -30,17 +30,20 @@ import {
   User,
   Lock,
   Calendar,
-  X
+  X,
+  Image as ImageIcon
 } from 'lucide-react';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from './firebase';
 import { format, parseISO } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
+import { safeJsonParse } from './lib/jsonUtils';
 import { useAuth } from './contexts/AuthContext';
 import { AuthModal } from './components/AuthModal';
 import { PaymentModal } from './components/PaymentModal';
 import { AdminPanel } from './components/AdminPanel';
+import { FeaturedImageGenerator } from './components/FeaturedImageGenerator';
 import { logout } from './firebase';
 
 // --- Types ---
@@ -147,6 +150,7 @@ export default function App() {
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false);
   const [showWelcomePopup, setShowWelcomePopup] = useState(false);
+  const [showImageGenerator, setShowImageGenerator] = useState(false);
 
   React.useEffect(() => {
     if (profile?.showWelcomePopup) {
@@ -433,7 +437,7 @@ export default function App() {
         config: { responseMimeType: "application/json" }
       });
 
-      const titles = JSON.parse(response.text || "[]");
+      const titles = safeJsonParse<string[]>(response.text, []);
       setState(s => updateHistory(s, { titles, isGeneratingTitles: false }));
     } catch (err: any) {
       console.error(err);
@@ -468,7 +472,7 @@ export default function App() {
         config: { responseMimeType: "application/json" }
       });
 
-      const variations = JSON.parse(response.text || "[]");
+      const variations = safeJsonParse<string[]>(response.text, []);
       setState(s => updateHistory(s, { semanticVariations: variations, isGeneratingVariations: false }));
     } catch (err: any) {
       console.error(err);
@@ -511,6 +515,8 @@ export default function App() {
           - Follow with "Introduction" heading and main content.
       9. CALL TO ACTION (CTA): Natural CTA at the end encouraging visits to ${state.websiteUrl || "the website"}.
       10. META DATA: SEO-optimized Meta Title (55-60 chars) and Meta Description (155-160 chars). Title and Meta Title MUST be different.
+      11. PARAGRAPH LIMIT: No paragraph should exceed 300 characters. Keep them short and punchy.
+      12. BULLET POINTS: Use bullet points and numbered lists naturally where possible to improve readability.
 
       Context:
       - Primary Keyword: ${state.primaryKeyword}
@@ -578,6 +584,8 @@ export default function App() {
       13. AUTHOR BIO: At the very end of the content, include a professional "About the Author" bio (30-35 words). It should highlight expertise relevant to the topic and subtly mention their role at ${state.websiteUrl || "the company"}.
       14. META DATA: SEO-optimized Meta Title (55-60 chars) and Meta Description (155-160 chars). Title and Meta Title MUST be different.
       15. WORD COUNT: The content MUST be approximately ${state.wordCount} words. Provide a full-length, detailed article that meets this target.
+      16. PARAGRAPH LIMIT: No paragraph should exceed 300 characters. Keep them short and punchy.
+      17. BULLET POINTS: Use bullet points and numbered lists naturally where possible to improve readability.
 
       INPUT HANDLING:
       - If Author/Business Context sounds promotional, convert it into neutral expertise positioning.
@@ -621,7 +629,11 @@ export default function App() {
           }
         });
 
-        const data = JSON.parse(response.text || "{}");
+        const data = safeJsonParse<{ metaTitle: string; metaDescription: string; content: string }>(response.text, {
+          metaTitle: '',
+          metaDescription: '',
+          content: ''
+        });
         if (!data.content) throw new Error("Empty content");
 
         const content = data.content;
@@ -677,8 +689,8 @@ export default function App() {
         1. Apply the user's instruction to the content.
         2. MAINTAIN ALL ORIGINAL QUALITY STANDARDS:
            ${isGuestPost 
-             ? "Strict Grade 5-6 readability, BERT/MUM optimization, high burstiness, no robotic phrasing, proper Markdown tables, neutral third-person tone." 
-             : "Grade 5-6 readability, BERT/MUM optimization, human tone, natural keyword integration, people-first approach."}
+             ? "Strict Grade 5-6 readability, BERT/MUM optimization, high burstiness, no robotic phrasing, proper Markdown tables, neutral third-person tone, max 300 chars per paragraph, natural bullet points." 
+             : "Grade 5-6 readability, BERT/MUM optimization, human tone, natural keyword integration, people-first approach, max 300 chars per paragraph, natural bullet points."}
         3. Keep the same structure (H1, AI Overview, Introduction, etc.).
         4. If the user asks for a specific change, prioritize it while keeping the rest of the content high-quality.
         
@@ -692,7 +704,11 @@ export default function App() {
         config: { responseMimeType: "application/json" }
       });
 
-      const data = JSON.parse(response.text || "{}");
+      const data = safeJsonParse<{ metaTitle: string; metaDescription: string; content: string }>(response.text, {
+        metaTitle: '',
+        metaDescription: '',
+        content: ''
+      });
       if (!data.content) throw new Error("Empty content");
 
       const content = data.content;
@@ -726,6 +742,10 @@ export default function App() {
       const prompt = `
         Based on the following content titled "${state.selectedTitle}", generate a section with 5-6 FAQs addressing real-time user queries.
         Use a professional yet conversational tone.
+        
+        STRICT RULES FOR FAQs:
+        1. ANSWERS MUST BE TO THE POINT.
+        2. EACH ANSWER MUST BE LESS THAN 150 CHARACTERS.
         
         Content:
         ${state.generatedContent.substring(0, 1000)}...
@@ -800,6 +820,12 @@ export default function App() {
             className="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-100 rounded-lg py-2.5 px-4 text-sm font-semibold flex items-center gap-2 transition-all border border-zinc-700"
           >
             <Plus className="w-4 h-4" /> New Generation
+          </button>
+          <button 
+            onClick={() => setShowImageGenerator(true)}
+            className="w-full mt-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-100 rounded-lg py-2.5 px-4 text-sm font-semibold flex items-center gap-2 transition-all border border-zinc-700"
+          >
+            <ImageIcon className="w-4 h-4 text-blue-400" /> Featured Image
           </button>
         </div>
 
@@ -946,7 +972,17 @@ export default function App() {
         </header>
 
         <main className="flex-1 max-w-7xl mx-auto w-full p-4 md:p-8 grid grid-cols-1 lg:grid-cols-12 gap-8 relative">
-          {(!user || (!isSubscribed && !hasCredits)) && (
+          {showImageGenerator && (
+            <div className="lg:col-span-12">
+              <FeaturedImageGenerator 
+                initialTopic={state.selectedTitle || state.primaryKeyword} 
+                content={state.generatedContent}
+                onClose={() => setShowImageGenerator(false)} 
+              />
+            </div>
+          )}
+          
+          {(!user || (!isSubscribed && !hasCredits)) && !showImageGenerator && (
             <div className="absolute inset-0 z-20 bg-zinc-50/60 backdrop-blur-[2px] flex items-center justify-center p-8">
               <motion.div 
                 initial={{ opacity: 0, y: 20 }}
@@ -981,7 +1017,7 @@ export default function App() {
             </div>
           )}
         {/* Left Column: Inputs */}
-        <div className="lg:col-span-4 space-y-6">
+        <div className={cn("lg:col-span-4 space-y-6", showImageGenerator && "hidden lg:block")}>
           <section className="bg-white rounded-2xl border border-zinc-200 p-6 shadow-sm space-y-6">
             <h2 className="text-lg font-semibold flex items-center gap-2">
               <Layout className="w-5 h-5 text-zinc-400" /> Content Config
@@ -1187,7 +1223,7 @@ export default function App() {
         </div>
 
         {/* Right Column: Results & Content */}
-        <div className="lg:col-span-8 space-y-6">
+        <div className={cn("lg:col-span-8 space-y-6", showImageGenerator && "hidden lg:block")}>
           {/* Title Selection */}
           <AnimatePresence>
             {state.titles.length > 0 && (
@@ -1494,6 +1530,13 @@ export default function App() {
                       <span className="text-sm font-bold text-zinc-700">Generated Content</span>
                     </div>
                     <div className="flex items-center gap-2">
+                      <button 
+                        onClick={() => setShowImageGenerator(true)}
+                        className="p-2 hover:bg-zinc-200 rounded-lg transition-colors text-zinc-500"
+                        title="Generate Featured Image"
+                      >
+                        <ImageIcon className="w-4 h-4" />
+                      </button>
                       <button 
                         onClick={copyToClipboard}
                         className="p-2 hover:bg-zinc-200 rounded-lg transition-colors text-zinc-500"
