@@ -513,12 +513,12 @@ export default function App() {
           - Start with H1 (The Selected Title).
           - Follow with a bolded **AI Overview** (70-80 words) answering the main query.
           - Follow with "Introduction" heading and main content.
-      9. CALL TO ACTION (CTA): Natural CTA at the end encouraging visits to ${state.websiteUrl || "the website"}.
+      9. CALL TO ACTION (CTA): Natural CTA at the end encouraging visits to the brand website. Use a proper hyperlink with the brand name as anchor text (e.g., [Brand Name](${state.websiteUrl})).
       10. META DATA: SEO-optimized Meta Title (55-60 chars) and Meta Description (155-160 chars). Title and Meta Title MUST be different.
       11. PARAGRAPH LIMIT: No paragraph should exceed 300 characters. Keep them short and punchy.
       12. BULLET POINTS: Use bullet points and numbered lists naturally where possible to improve readability.
-      13. BRAND MENTIONS: Mention the brand/website (${state.websiteUrl || "the brand"}) naturally 3-4 times throughout the content to build authority and recognition.
-      14. CASE STUDY: Include at least one realistic, non-fake case study or success story related to the topic. Example: "When a client came to us with [problem], we implemented [solution] and saw [result]." Make it feel authentic and experience-driven.
+      13. BRAND INTEGRATION: Mention the brand/website name 2-3 times naturally throughout the post to build brand authority. At least one mention MUST be a proper hyperlink using the brand name as anchor text (e.g., [Brand Name](${state.websiteUrl})). DO NOT use raw URLs.
+      14. CASE STUDIES: Include at least one realistic, expertise-driven case study (e.g., "When a client approached us at [Brand Name](${state.websiteUrl}) with similar concerns, we implemented [Strategy] and achieved [Result]"). Ensure it sounds authentic and professional.
 
       Context:
       - Primary Keyword: ${state.primaryKeyword}
@@ -588,8 +588,6 @@ export default function App() {
       15. WORD COUNT: The content MUST be approximately ${state.wordCount} words. Provide a full-length, detailed article that meets this target.
       16. PARAGRAPH LIMIT: No paragraph should exceed 300 characters. Keep them short and punchy.
       17. BULLET POINTS: Use bullet points and numbered lists naturally where possible to improve readability.
-      18. BRAND MENTIONS: Mention the brand/website (${state.websiteUrl || "the brand"}) naturally 2-3 times throughout the content.
-      19. CASE STUDY: Include a brief, realistic case study or example to demonstrate expertise (E-E-A-T).
 
       INPUT HANDLING:
       - If Author/Business Context sounds promotional, convert it into neutral expertise positioning.
