@@ -19,24 +19,24 @@ export function PaymentModal({ isOpen, onClose }: { isOpen: boolean, onClose: ()
     { 
       id: 'basic', 
       name: 'Basic', 
-      pricePKR: 500, 
-      priceUSD: 2, 
+      pricePKR: 999, 
+      priceUSD: 3.58, 
       credits: 700, 
       description: 'Perfect for beginners' 
     },
     { 
       id: 'pro', 
       name: 'Pro', 
-      pricePKR: 1500, 
-      priceUSD: 6, 
-      credits: 2000, 
+      pricePKR: 1999, 
+      priceUSD: 7.16, 
+      credits: 1500, 
       description: 'Best for power users' 
     },
     { 
       id: 'team', 
       name: 'Team', 
-      pricePKR: 14000, 
-      priceUSD: 50, 
+      pricePKR: 70000, 
+      priceUSD: 250, 
       credits: 50000, 
       description: 'For domains & teams' 
     }

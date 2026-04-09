@@ -395,7 +395,7 @@ export function AdminPanel({ isOpen, onClose }: { isOpen: boolean, onClose: () =
                               {payment.planName || 'Pro'} Plan
                             </div>
                             <div className="inline-flex items-center gap-2 px-3 py-1 bg-green-50 text-green-600 rounded-full text-[10px] font-black uppercase tracking-widest">
-                              {payment.amountPKR || 499} PKR / ${payment.amountUSD || 2}
+                              {payment.amountPKR || 999} PKR / ${payment.amountUSD || 3.58}
                             </div>
                             <div className="inline-flex items-center gap-2 px-3 py-1 bg-zinc-100 text-zinc-600 rounded-full text-[10px] font-black uppercase tracking-widest">
                               {payment.credits || 0} Credits
