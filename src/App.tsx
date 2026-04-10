@@ -144,6 +144,8 @@ const INITIAL_STATE: AppState = {
   error: null,
 };
 
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 export default function App() {
   const { user, profile, teamProfile, isAdmin, isSubscribed, hasCredits, useCredit, checkAccess, loading: authLoading } = useAuth();
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
@@ -416,7 +418,6 @@ export default function App() {
 
     setState(s => ({ ...s, isGeneratingTitles: true, error: null }));
     try {
-      await useCredit();
       const prompt = `
         As an expert SEO Content Strategist, generate 5 high-performing, click-worthy (but not clickbait) SEO titles for a ${state.contentType} about "${state.primaryKeyword}".
         
@@ -438,6 +439,7 @@ export default function App() {
       });
 
       const titles = safeJsonParse<string[]>(response.text, []);
+      await useCredit();
       setState(s => updateHistory(s, { titles, isGeneratingTitles: false }));
     } catch (err: any) {
       console.error(err);
@@ -459,7 +461,6 @@ export default function App() {
 
     setState(s => ({ ...s, isGeneratingVariations: true, error: null }));
     try {
-      await useCredit();
       const prompt = `
         Generate 10 semantic variations and LSI (Latent Semantic Indexing) keywords for the primary keyword: "${state.primaryKeyword}".
         These should help in content optimization and covering the topic comprehensively for Google's Helpful Content update.
@@ -473,6 +474,7 @@ export default function App() {
       });
 
       const variations = safeJsonParse<string[]>(response.text, []);
+      await useCredit();
       setState(s => updateHistory(s, { semanticVariations: variations, isGeneratingVariations: false }));
     } catch (err: any) {
       console.error(err);
@@ -495,7 +497,6 @@ export default function App() {
     setState(s => ({ ...s, isGeneratingContent: true, error: null }));
     
     try {
-      await useCredit();
       const isGuestPost = state.contentType === 'guest-post';
 
     const blogPrompt = `
@@ -641,6 +642,7 @@ export default function App() {
         const content = data.content;
         const audit = calculateAuditMetrics(content);
 
+        await useCredit();
         setState(s => updateHistory(s, { 
           generatedContent: content, 
           metaTitle: data.metaTitle || "",
@@ -652,7 +654,16 @@ export default function App() {
       } catch (err: any) {
         attempts++;
         console.error(`Attempt ${attempts} failed:`, err);
-        if (attempts === maxAttempts) {
+        
+        const is503 = err?.message?.includes('503') || err?.status === 503 || JSON.stringify(err).includes('503');
+        
+        if (attempts < maxAttempts) {
+          if (is503) {
+            const delay = 2000 * Math.pow(2, attempts - 1);
+            await sleep(delay);
+            continue;
+          }
+        } else {
           const errorMessage = typeof err === 'string' ? err : (err?.message || JSON.stringify(err));
           setState(s => ({ ...s, error: `Failed to generate content after multiple attempts: ${errorMessage}`, isGeneratingContent: false }));
         }
@@ -675,7 +686,6 @@ export default function App() {
     setState(s => ({ ...s, isRefining: true, error: null }));
 
     try {
-      await useCredit();
       const isGuestPost = state.contentType === 'guest-post';
       
       const refinePrompt = `
@@ -716,6 +726,7 @@ export default function App() {
       const content = data.content;
       const audit = calculateAuditMetrics(content);
 
+      await useCredit();
       setState(s => updateHistory(s, { 
         generatedContent: content, 
         metaTitle: data.metaTitle || s.metaTitle,
@@ -740,7 +751,6 @@ export default function App() {
 
     setState(s => ({ ...s, isGeneratingFaqs: true, error: null }));
     try {
-      await useCredit();
       const prompt = `
         Based on the following content titled "${state.selectedTitle}", generate a section with 5-6 FAQs addressing real-time user queries.
         Use a professional yet conversational tone.
@@ -761,6 +771,7 @@ export default function App() {
       });
 
       const faqs = response.text || "";
+      await useCredit();
       setState(s => updateHistory(s, { 
         generatedContent: s.generatedContent + "\n\n" + faqs,
         isGeneratingFaqs: false 
@@ -781,7 +792,6 @@ export default function App() {
 
     setState(s => ({ ...s, isGeneratingSchema: true, error: null }));
     try {
-      await useCredit();
       const prompt = `
         Based on the following content titled "${state.selectedTitle}", generate a valid JSON-LD FAQ Schema markup.
         
@@ -797,6 +807,7 @@ export default function App() {
       });
 
       const schema = response.text || "";
+      await useCredit();
       setState(s => updateHistory(s, { 
         generatedContent: s.generatedContent + "\n\n## Schema Markup\n\n" + schema,
         isGeneratingSchema: false 
@@ -980,6 +991,8 @@ export default function App() {
                 initialTopic={state.selectedTitle || state.primaryKeyword} 
                 content={state.generatedContent}
                 onClose={() => setShowImageGenerator(false)} 
+                useCredit={useCredit}
+                checkAccess={checkAccess}
               />
             </div>
           )}

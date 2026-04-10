@@ -19,12 +19,16 @@ interface FeaturedImageGeneratorProps {
   initialTopic?: string;
   content?: string;
   onClose?: () => void;
+  useCredit?: () => Promise<void>;
+  checkAccess?: () => boolean;
 }
 
 export const FeaturedImageGenerator: React.FC<FeaturedImageGeneratorProps> = ({ 
   initialTopic = '', 
   content = '',
-  onClose 
+  onClose,
+  useCredit,
+  checkAccess
 }) => {
   const [topic, setTopic] = useState(initialTopic);
   const [selectedStyle, setSelectedStyle] = useState('professional');
@@ -106,10 +110,17 @@ export const FeaturedImageGenerator: React.FC<FeaturedImageGeneratorProps> = ({
       return;
     }
 
+    if (checkAccess && !checkAccess()) {
+      setError("You don't have enough credits to generate an image.");
+      return;
+    }
+
     setIsGenerating(true);
     setError(null);
     setGeneratedImage(null);
     setFinalImage(null);
+
+    const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
     try {
       const insights = await extractInsights();
@@ -121,30 +132,54 @@ export const FeaturedImageGenerator: React.FC<FeaturedImageGeneratorProps> = ({
       
       const finalPrompt = `${basePrompt} ${colorContext} The image should have plenty of negative space for text overlay. Do not include any text in the image itself. High resolution, 4k, professional photography or high-end digital art style.`;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-image',
-        contents: {
-          parts: [{ text: finalPrompt }]
-        },
-        config: {
-          imageConfig: {
-            aspectRatio: "16:9"
+      let attempts = 0;
+      const maxAttempts = 3;
+      let base64Image = "";
+
+      while (attempts < maxAttempts) {
+        try {
+          const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash-image',
+            contents: {
+              parts: [{ text: finalPrompt }]
+            },
+            config: {
+              imageConfig: {
+                aspectRatio: "16:9"
+              }
+            }
+          });
+
+          for (const part of response.candidates?.[0]?.content?.parts || []) {
+            if (part.inlineData) {
+              base64Image = `data:image/png;base64,${part.inlineData.data}`;
+              break;
+            }
+          }
+
+          if (base64Image) {
+            if (useCredit) await useCredit();
+            setGeneratedImage(base64Image);
+            return; // Success
+          } else {
+            throw new Error("Failed to generate image data.");
+          }
+        } catch (err: any) {
+          attempts++;
+          console.error(`Image generation attempt ${attempts} failed:`, err);
+          
+          const is503 = err?.message?.includes('503') || err?.status === 503 || JSON.stringify(err).includes('503');
+          
+          if (attempts < maxAttempts) {
+            if (is503) {
+              const delay = 2000 * Math.pow(2, attempts - 1);
+              await sleep(delay);
+              continue;
+            }
+          } else {
+            throw err;
           }
         }
-      });
-
-      let base64Image = "";
-      for (const part of response.candidates?.[0]?.content?.parts || []) {
-        if (part.inlineData) {
-          base64Image = `data:image/png;base64,${part.inlineData.data}`;
-          break;
-        }
-      }
-
-      if (base64Image) {
-        setGeneratedImage(base64Image);
-      } else {
-        throw new Error("Failed to generate image data.");
       }
     } catch (err: any) {
       console.error(err);
