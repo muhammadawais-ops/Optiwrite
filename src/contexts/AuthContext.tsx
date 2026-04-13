@@ -25,8 +25,8 @@ interface AuthContextType {
   isAdmin: boolean;
   isSubscribed: boolean;
   hasCredits: boolean;
-  useCredit: () => Promise<void>;
-  checkAccess: () => boolean;
+  useCredit: (amount?: number) => Promise<void>;
+  checkAccess: (requiredCredits?: number) => boolean;
   refreshProfile: () => void;
 }
 
@@ -123,40 +123,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return unsubscribe;
   }, [user]);
 
-  const useCredit = async () => {
+  const useCredit = async (amount: number = 1) => {
     if (!user || !profile) return;
     if (profile.role === 'admin') return; 
     
     // If user has team access, they use team credits first
     if (teamProfile) {
-      if (teamProfile.credits <= 0) throw new Error("Team credits exhausted");
+      if (teamProfile.credits < amount) throw new Error("Team credits exhausted");
       const domain = user.email?.split('@')[1];
       if (domain) {
         await updateDoc(doc(db, 'teams', domain.toLowerCase()), {
-          credits: increment(-1)
+          credits: increment(-amount)
         });
         return;
       }
     }
 
     // Otherwise use personal credits (even if active sub, they have a limit now)
-    if (profile.credits <= 0) throw new Error("No credits remaining");
+    if (profile.credits < amount) throw new Error("No credits remaining");
     const userDocRef = doc(db, 'users', user.uid);
     await updateDoc(userDocRef, {
-      credits: increment(-1)
+      credits: increment(-amount)
     });
   };
 
-  const checkAccess = () => {
+  const checkAccess = (requiredCredits: number = 1) => {
     if (!user) return false;
     if (profile?.role === 'admin') return true;
-    if (profile?.subscriptionStatus === 'active' && 
-        profile.expiryDate && 
-        isAfter(parseISO(profile.expiryDate), new Date())) {
-      return true;
-    }
-    if (teamProfile && teamProfile.credits > 0) return true;
-    return (profile?.credits || 0) > 0;
+    
+    // Check team credits first
+    if (teamProfile && teamProfile.credits >= requiredCredits) return true;
+    
+    // Check personal credits
+    return (profile?.credits || 0) >= requiredCredits;
   };
 
   const isAdmin = profile?.role === 'admin';

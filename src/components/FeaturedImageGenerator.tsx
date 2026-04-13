@@ -110,8 +110,8 @@ export const FeaturedImageGenerator: React.FC<FeaturedImageGeneratorProps> = ({
       return;
     }
 
-    if (checkAccess && !checkAccess()) {
-      setError("You don't have enough credits to generate an image.");
+    if (checkAccess && !checkAccess(2)) {
+      setError("You don't have enough credits to generate an image (Requires 2 credits).");
       return;
     }
 
@@ -158,7 +158,7 @@ export const FeaturedImageGenerator: React.FC<FeaturedImageGeneratorProps> = ({
           }
 
           if (base64Image) {
-            if (useCredit) await useCredit();
+            if (useCredit) await useCredit(2);
             setGeneratedImage(base64Image);
             return; // Success
           } else {
