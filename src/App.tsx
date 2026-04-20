@@ -5,6 +5,7 @@ import OptiWrite from './pages/OptiWrite';
 import CopyElite from './pages/CopyElite';
 import About from './pages/About';
 import Blog from './pages/Blog';
+import Article from './pages/Article';
 import Admin from './pages/Admin';
 
 export default function App() {
@@ -16,6 +17,7 @@ export default function App() {
         <Route path="/copyelite" element={<CopyElite />} />
         <Route path="/about" element={<About />} />
         <Route path="/blog" element={<Blog />} />
+        <Route path="/blog/:id" element={<Article />} />
         <Route path="/admin" element={<Admin />} />
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/" replace />} />

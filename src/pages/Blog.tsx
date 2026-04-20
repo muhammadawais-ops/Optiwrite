@@ -19,6 +19,7 @@ interface Blog {
   content: string;
   imageUrl?: string;
   author?: string;
+  category?: string;
   createdAt: any;
 }
 
@@ -27,6 +28,7 @@ export default function Blog() {
   const [blogs, setBlogs] = useState<Blog[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [activeCategory, setActiveCategory] = useState('All');
 
   useEffect(() => {
     const q = query(collection(db, 'blogs'), orderBy('createdAt', 'desc'));
@@ -42,10 +44,21 @@ export default function Blog() {
     return unsubscribe;
   }, []);
 
-  const filteredBlogs = blogs.filter(b => 
-    b.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    b.content.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const categories = ['All', ...Array.from(new Set(blogs.map(b => b.category || 'Insights')))];
+
+  const filteredBlogs = blogs.filter(b => {
+    const matchesSearch = b.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                         b.content.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesCategory = activeCategory === 'All' || (b.category || 'Insights') === activeCategory;
+    return matchesSearch && matchesCategory;
+  });
+
+  const formatDate = (date: any) => {
+    if (!date) return '...';
+    if (typeof date === 'string') return new Date(date).toLocaleDateString();
+    if (date.seconds) return new Date(date.seconds * 1000).toLocaleDateString();
+    return new Date(date).toLocaleDateString();
+  };
 
   return (
     <div className="min-h-screen bg-zinc-50 selection:bg-blue-100 text-zinc-900 font-sans antialiased">
@@ -82,15 +95,30 @@ export default function Blog() {
             </p>
           </motion.div>
 
-          <div className="mt-12 max-w-lg mx-auto relative">
-             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={20} />
-             <input 
-                type="text" 
-                placeholder="Search articles..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl py-4 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all font-medium"
-             />
+          <div className="mt-12 max-w-2xl mx-auto">
+             <div className="relative mb-8">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={20} />
+                <input 
+                   type="text" 
+                   placeholder="Search articles..."
+                   value={searchTerm}
+                   onChange={(e) => setSearchTerm(e.target.value)}
+                   className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl py-4 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all font-medium"
+                />
+             </div>
+             
+             {/* Category Chips */}
+             <div className="flex flex-wrap justify-center gap-2">
+                {categories.map(cat => (
+                  <button
+                    key={cat}
+                    onClick={() => setActiveCategory(cat)}
+                    className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${activeCategory === cat ? 'bg-zinc-900 text-white' : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200'}`}
+                  >
+                    {cat}
+                  </button>
+                ))}
+             </div>
           </div>
         </div>
       </header>
@@ -110,6 +138,7 @@ export default function Blog() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: idx * 0.1 }}
+                onClick={() => navigate(`/blog/${blog.id}`)}
                 className="group bg-white rounded-[2.5rem] overflow-hidden border border-zinc-100 shadow-xl shadow-zinc-200/20 hover:shadow-2xl transition-all cursor-pointer flex flex-col"
               >
                 <div className="h-56 bg-zinc-100 relative overflow-hidden">
@@ -126,15 +155,15 @@ export default function Blog() {
                      </div>
                    )}
                    <div className="absolute top-4 right-4 px-3 py-1 bg-white/90 backdrop-blur rounded-full text-[10px] font-black uppercase tracking-widest text-zinc-900 shadow-sm">
-                      Article
+                      {blog.category || 'Article'}
                    </div>
                 </div>
                 <div className="p-8 flex flex-col flex-grow">
                    <div className="flex items-center gap-4 text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400 mb-4">
-                      <div className="flex items-center gap-1.5"><Calendar size={12} /> {new Date(blog.createdAt?.seconds * 1000).toLocaleDateString()}</div>
+                      <div className="flex items-center gap-1.5"><Calendar size={12} /> {formatDate(blog.createdAt)}</div>
                       <div className="flex items-center gap-1.5"><User size={12} /> {blog.author || 'Admin'}</div>
                    </div>
-                   <h3 className="text-xl font-black text-zinc-900 mb-4 group-hover:text-blue-600 transition-colors leading-tight">{blog.title}</h3>
+                   <h3 className="text-xl font-black text-zinc-900 mb-4 group-hover:text-blue-600 transition-colors leading-tight line-clamp-2">{blog.title}</h3>
                    <div className="text-zinc-500 text-sm leading-relaxed mb-6 line-clamp-3 font-medium">
                       {blog.content.replace(/[#*`]/g, '')}
                    </div>

@@ -44,6 +44,11 @@ export default function Admin() {
   const [blogs, setBlogs] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   
+  // Security
+  const [password, setPassword] = useState('');
+  const [isUnlocked, setIsUnlocked] = useState(false);
+  const [error, setError] = useState('');
+
   // Blog form
   const [isEditingBlog, setIsEditingBlog] = useState(false);
   const [currentBlog, setCurrentBlog] = useState<any>(null);
@@ -51,7 +56,8 @@ export default function Admin() {
     title: '',
     content: '',
     imageUrl: '',
-    author: 'Admin'
+    category: 'SEO Strategy',
+    author: 'Muhammad Awais'
   });
 
   useEffect(() => {
@@ -79,6 +85,16 @@ export default function Admin() {
     };
   }, [isAdmin, navigate]);
 
+  const handleUnlock = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (password === 'Aksafasihu') {
+      setIsUnlocked(true);
+      setError('');
+    } else {
+      setError('Invalid Access Key');
+    }
+  };
+
   const handleApprovePayment = async (payment: any) => {
     try {
       await updateDoc(doc(db, 'payments', payment.id), {
@@ -89,8 +105,40 @@ export default function Admin() {
         subscriptionStatus: 'active',
         credits: increment(payment.amount || 100),
         planName: 'Elite',
+        showWelcomePopup: true,
         expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
       });
+      alert('Payment approved and plan activated!');
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleRejectPayment = async (payment: any) => {
+    if (confirm('Are you sure you want to REJECT this payment?')) {
+      try {
+        await updateDoc(doc(db, 'payments', payment.id), {
+          status: 'rejected',
+          verifiedAt: new Date().toISOString()
+        });
+        alert('Payment rejected.');
+      } catch (err) {
+        console.error(err);
+      }
+    }
+  };
+
+  const handleResetCredits = async (userId: string) => {
+    const amountStr = prompt('Enter credits to GIVE (number):', '10');
+    if (!amountStr) return;
+    const amount = parseInt(amountStr);
+    if (isNaN(amount)) return;
+
+    try {
+      await updateDoc(doc(db, 'users', userId), {
+        credits: amount
+      });
+      alert(`Credits updated to ${amount}`);
     } catch (err) {
       console.error(err);
     }
@@ -101,33 +149,74 @@ export default function Admin() {
 
     try {
       if (currentBlog) {
-        // Update
         await updateDoc(doc(db, 'blogs', currentBlog.id), {
           ...blogForm,
           updatedAt: new Date().toISOString()
         });
       } else {
-        // Create
         await addDoc(collection(db, 'blogs'), {
           ...blogForm,
           createdAt: new Date().toISOString()
         });
       }
       setIsEditingBlog(false);
-      setBlogForm({ title: '', content: '', imageUrl: '', author: 'Admin' });
+      setBlogForm({ title: '', content: '', imageUrl: '', category: 'SEO Strategy', author: 'Muhammad Awais' });
       setCurrentBlog(null);
     } catch (err) {
       console.error(err);
     }
   };
 
-  const handleDeleteBlog = async (id: string) => {
-    if (confirm('Delete this blog post?')) {
-      await deleteDoc(doc(db, 'blogs', id));
-    }
+  const formatDate = (date: any) => {
+    if (!date) return '...';
+    if (typeof date === 'string') return new Date(date).toLocaleDateString();
+    if (date.seconds) return new Date(date.seconds * 1000).toLocaleDateString();
+    return new Date(date).toLocaleDateString();
   };
 
   if (!isAdmin) return null;
+
+  if (!isUnlocked) {
+    return (
+      <div className="min-h-screen bg-zinc-900 flex items-center justify-center p-6">
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="bg-white rounded-[2.5rem] p-10 max-w-md w-full shadow-2xl text-center"
+        >
+          <div className="w-20 h-20 bg-zinc-100 rounded-full flex items-center justify-center mx-auto mb-6">
+             <Shield className="w-10 h-10 text-zinc-900" />
+          </div>
+          <h2 className="text-3xl font-black mb-2 tracking-tighter uppercase italic">Secure Access</h2>
+          <p className="text-zinc-400 text-sm mb-8 font-medium italic">Identification required for AI Suite Control Center.</p>
+          
+          <form onSubmit={handleUnlock} className="space-y-4">
+             <input 
+                type="password"
+                placeholder="Enter Admin Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl py-4 px-6 text-center font-black tracking-widest focus:outline-none focus:ring-2 focus:ring-zinc-900/5 transition-all"
+             />
+             {error && <p className="text-red-500 text-[10px] font-black uppercase tracking-widest">{error}</p>}
+             <button 
+                type="submit"
+                className="w-full bg-zinc-900 text-white py-4 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-black transition-all active:scale-95 shadow-xl"
+             >
+                Unlock Terminal
+             </button>
+             <button 
+                type="button"
+                onClick={() => navigate('/')}
+                className="w-full text-zinc-400 text-[10px] font-black uppercase tracking-widest hover:text-zinc-900 mt-4"
+             >
+                Return to Surface
+             </button>
+          </form>
+        </motion.div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-zinc-50 text-zinc-900 font-sans antialiased">
@@ -211,9 +300,20 @@ export default function Admin() {
                           <p className="text-xs text-zinc-400">{u.email}</p>
                         </td>
                         <td className="px-6 py-4 uppercase text-[10px]"><span className={u.role === 'admin' ? 'text-blue-600' : 'text-zinc-400'}>{u.role}</span></td>
-                        <td className="px-6 py-4">{u.credits}</td>
+                        <td className="px-6 py-4">
+                           <div className="flex items-center gap-2">
+                             {u.credits}
+                             <button 
+                               onClick={() => handleResetCredits(u.id)}
+                               className="p-1.5 bg-zinc-100 text-zinc-400 rounded-md hover:bg-zinc-200 hover:text-zinc-900 transition-all"
+                               title="Give Credits"
+                             >
+                                <Plus size={10} />
+                             </button>
+                           </div>
+                        </td>
                         <td className="px-6 py-4 uppercase text-[10px] tracking-widest">{u.subscriptionStatus}</td>
-                        <td className="px-6 py-4 text-zinc-400">{new Date(u.createdAt).toLocaleDateString()}</td>
+                        <td className="px-6 py-4 text-zinc-400">{formatDate(u.createdAt)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -231,7 +331,7 @@ export default function Admin() {
               className="space-y-4"
             >
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {payments.filter(p => p.userEmail.toLowerCase().includes(searchTerm.toLowerCase())).map(p => (
+                {payments.filter(p => p.userEmail?.toLowerCase().includes(searchTerm.toLowerCase())).map(p => (
                   <div key={p.id} className="bg-white p-8 rounded-[2.5rem] border border-zinc-200 shadow-sm relative overflow-hidden group">
                     <div className="flex justify-between items-start mb-6">
                       <div className="w-12 h-12 bg-zinc-100 rounded-2xl flex items-center justify-center text-zinc-400">
@@ -241,8 +341,8 @@ export default function Admin() {
                         {p.status}
                       </span>
                     </div>
-                    <h5 className="font-black text-lg tracking-tight mb-1">{p.userEmail}</h5>
-                    <p className="text-xs text-zinc-400 font-bold uppercase tracking-widest mb-6">Amount: {p.amount} Credits</p>
+                    <h5 className="font-black text-lg tracking-tight mb-1 truncate">{p.userEmail}</h5>
+                    <p className="text-[10px] text-zinc-400 font-black uppercase tracking-widest mb-6">Submitted: {formatDate(p.submittedAt)}</p>
                     
                     {p.status === 'pending' && (
                       <div className="flex gap-2">
@@ -252,7 +352,12 @@ export default function Admin() {
                         >
                           <Check size={14} /> Approve
                         </button>
-                        <button className="p-3 bg-red-50 text-red-500 rounded-xl hover:bg-red-100 transition-all"><X size={16} /></button>
+                        <button 
+                          onClick={() => handleRejectPayment(p)}
+                          className="p-3 bg-red-50 text-red-500 rounded-xl hover:bg-red-100 transition-all"
+                        >
+                          <X size={16} />
+                        </button>
                       </div>
                     )}
                   </div>
@@ -278,7 +383,7 @@ export default function Admin() {
                     onClick={() => {
                       setIsEditingBlog(true);
                       setCurrentBlog(null);
-                      setBlogForm({ title: '', content: '', imageUrl: '', author: 'Admin' });
+                      setBlogForm({ title: '', content: '', imageUrl: '', category: 'SEO Strategy', author: 'Muhammad Awais' });
                     }}
                     className="bg-white text-zinc-900 w-12 h-12 rounded-2xl flex items-center justify-center hover:scale-110 transition-transform active:scale-95"
                  >
@@ -303,11 +408,31 @@ export default function Admin() {
                        />
                     </div>
                     <div className="space-y-2">
+                       <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Category</label>
+                       <input 
+                          type="text" 
+                          value={blogForm.category}
+                          onChange={(e) => setBlogForm({...blogForm, category: e.target.value})}
+                          className="w-full bg-zinc-50 border border-zinc-200 rounded-xl py-3 px-4 font-bold focus:outline-none"
+                       />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-2">
                        <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Image URL</label>
                        <input 
                           type="text" 
                           value={blogForm.imageUrl}
                           onChange={(e) => setBlogForm({...blogForm, imageUrl: e.target.value})}
+                          className="w-full bg-zinc-50 border border-zinc-200 rounded-xl py-3 px-4 font-bold focus:outline-none"
+                       />
+                    </div>
+                    <div className="space-y-2">
+                       <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Author</label>
+                       <input 
+                          type="text" 
+                          value={blogForm.author}
+                          onChange={(e) => setBlogForm({...blogForm, author: e.target.value})}
                           className="w-full bg-zinc-50 border border-zinc-200 rounded-xl py-3 px-4 font-bold focus:outline-none"
                        />
                     </div>
@@ -336,18 +461,27 @@ export default function Admin() {
                           {b.imageUrl ? (
                             <img src={b.imageUrl} className="w-full h-full object-cover" referrerPolicy="no-referrer" alt="" />
                           ) : (
-                            <div className="w-full h-full flex items-center justify-center text-zinc-300"><ImageIcon size={32} /></div>
+                            <div className="w-full h-full flex items-center justify-center text-zinc-300"><BookOpen size={32} /></div>
                           )}
                        </div>
-                       <div className="flex-grow flex flex-col justify-between">
+                       <div className="flex-grow flex flex-col justify-between overflow-hidden">
                           <div>
-                            <h4 className="font-bold text-zinc-900 mb-1">{b.title}</h4>
-                            <p className="text-[10px] text-zinc-400 font-black uppercase tracking-widest">{new Date(b.createdAt).toLocaleDateString()}</p>
+                            <h4 className="font-bold text-zinc-900 mb-1 truncate">{b.title}</h4>
+                            <div className="flex items-center gap-2">
+                               <span className="text-[8px] font-black uppercase tracking-widest bg-zinc-100 px-2 py-0.5 rounded text-zinc-500">{b.category || 'Insights'}</span>
+                               <p className="text-[10px] text-zinc-400 font-black uppercase tracking-widest">{formatDate(b.createdAt)}</p>
+                            </div>
                           </div>
                           <div className="flex gap-2">
                              <button 
                                onClick={() => {
-                                 setBlogForm({ title: b.title, content: b.content, imageUrl: b.imageUrl || '', author: b.author || 'Admin' });
+                                 setBlogForm({ 
+                                   title: b.title, 
+                                   content: b.content, 
+                                   imageUrl: b.imageUrl || '', 
+                                   category: b.category || 'SEO Strategy',
+                                   author: b.author || 'Muhammad Awais' 
+                                 });
                                  setCurrentBlog(b);
                                  setIsEditingBlog(true);
                                }}
@@ -356,7 +490,9 @@ export default function Admin() {
                                 <Edit2 size={14} />
                              </button>
                              <button 
-                               onClick={() => handleDeleteBlog(b.id)}
+                               onClick={() => {
+                                  if(confirm('Delete blog?')) deleteDoc(doc(db, 'blogs', b.id));
+                               }}
                                className="p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-all border border-red-100"
                              >
                                 <Trash2 size={14} />

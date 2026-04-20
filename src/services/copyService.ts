@@ -1,4 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
+import { withRetry } from "../lib/aiUtils";
 
 const API_KEY = process.env.GEMINI_API_KEY || "";
 
@@ -170,14 +171,14 @@ export async function generateEmail(request: EmailRequest) {
   Please generate the ${request.isSequence ? "email sequence" : "email"} now.`;
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await withRetry(() => ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: prompt,
       config: {
         systemInstruction,
         temperature: 0.8,
       },
-    });
+    }));
 
     return response.text;
   } catch (error) {
@@ -210,14 +211,14 @@ export async function analyzeBusinessDetails(prompt: string) {
   Output ONLY the raw JSON. No markdown formatting.`;
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await withRetry(() => ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: `Analyze this business detail: "${prompt}"`,
       config: {
         systemInstruction,
         responseMimeType: "application/json",
       },
-    });
+    }));
 
     return JSON.parse(response.text || "{}");
   } catch (error) {

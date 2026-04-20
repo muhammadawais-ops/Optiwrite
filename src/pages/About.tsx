@@ -168,7 +168,13 @@ export default function About() {
       {/* Final CTA */}
       <footer className="py-24 px-6 border-t border-zinc-100 text-center">
         <h2 className="text-3xl font-black mb-8 uppercase tracking-tighter italic">Join us on this journey.</h2>
-        <div className="flex justify-center gap-6">
+        <div className="flex flex-col md:flex-row justify-center gap-6">
+          <button 
+            onClick={() => navigate('/blog')}
+            className="bg-white text-zinc-900 border border-zinc-200 px-8 py-4 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-zinc-50 transition-all shadow-xl active:scale-95"
+          >
+            View Portfolio
+          </button>
           <button 
             onClick={() => navigate('/optiwrite')}
             className="bg-zinc-900 text-white px-8 py-4 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-zinc-800 transition-all shadow-xl active:scale-95"

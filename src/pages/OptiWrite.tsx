@@ -45,6 +45,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { AuthModal } from '../components/AuthModal';
 import { PaymentModal } from '../components/PaymentModal';
 import { FeaturedImageGenerator } from '../components/FeaturedImageGenerator';
+import { withRetry } from '../lib/aiUtils';
 import { logout } from '../firebase';
 
 // --- Types ---
@@ -91,6 +92,7 @@ interface AppState {
   referenceLinks: ReferenceLink[];
   history: HistoryItem[];
   currentSessionId: string | null;
+  featuredImageUrl: string | null;
   error: string | null;
 }
 
@@ -142,6 +144,7 @@ const INITIAL_STATE: AppState = {
   referenceLinks: [{ url: '', context: '' }],
   history: [],
   currentSessionId: null,
+  featuredImageUrl: null,
   error: null,
 };
 
@@ -161,11 +164,20 @@ export default function OptiWrite() {
     
     setIsUploadingBlog(true);
     try {
+      // Simple category analysis based on content
+      const contentLower = state.generatedContent.toLowerCase();
+      let category = 'SEO Strategy';
+      if (contentLower.includes('email') || contentLower.includes('cold message')) category = 'Email Marketing';
+      else if (contentLower.includes('ai tool') || contentLower.includes('artificial intelligence')) category = 'AI Trends';
+      else if (contentLower.includes('business') || contentLower.includes('growth')) category = 'Business Growth';
+      else if (contentLower.includes('writing') || contentLower.includes('copywriting')) category = 'Copywriting';
+      
       await addDoc(collection(db, 'blogs'), {
         title: state.selectedTitle,
         content: state.generatedContent,
-        imageUrl: '', // Featured image could be added here if generated
-        author: user?.displayName || 'Admin',
+        imageUrl: state.featuredImageUrl || '', // Use generated image if available
+        category: category,
+        author: user?.displayName || 'Muhammad Awais',
         createdAt: new Date().toISOString()
       });
       alert('Published to AI Suite Blog!');
@@ -455,11 +467,11 @@ export default function OptiWrite() {
         Return ONLY a JSON array of strings.
       `;
 
-      const response = await ai.models.generateContent({
+      const response = await withRetry(() => ai.models.generateContent({
         model: GEMINI_MODEL,
         contents: prompt,
         config: { responseMimeType: "application/json" }
-      });
+      }));
 
       const titles = safeJsonParse<string[]>(response.text, []);
       await useCredit();
@@ -490,11 +502,11 @@ export default function OptiWrite() {
         Return ONLY a JSON array of strings.
       `;
 
-      const response = await ai.models.generateContent({
+      const response = await withRetry(() => ai.models.generateContent({
         model: GEMINI_MODEL,
         contents: prompt,
         config: { responseMimeType: "application/json" }
-      });
+      }));
 
       const variations = safeJsonParse<string[]>(response.text, []);
       await useCredit();
@@ -519,8 +531,7 @@ export default function OptiWrite() {
 
     setState(s => ({ ...s, isGeneratingContent: true, error: null }));
     
-    try {
-      const isGuestPost = state.contentType === 'guest-post';
+    const isGuestPost = state.contentType === 'guest-post';
 
     const blogPrompt = `
       As an elite SEO Content Writer with 20 years of experience, write a high-quality, "people-first" BLOG POST titled: "${state.selectedTitle}".
@@ -640,58 +651,35 @@ export default function OptiWrite() {
 
     const prompt = isGuestPost ? guestPostPrompt : blogPrompt;
 
-    // Retry logic for stability
-    let attempts = 0;
-    const maxAttempts = 3;
-
-    while (attempts < maxAttempts) {
-      try {
-        const response = await ai.models.generateContent({
-          model: GEMINI_MODEL,
-          contents: prompt,
-          config: { 
-            responseMimeType: "application/json",
-            thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH }
-          }
-        });
-
-        const data = safeJsonParse<{ metaTitle: string; metaDescription: string; content: string }>(response.text, {
-          metaTitle: '',
-          metaDescription: '',
-          content: ''
-        });
-        if (!data.content) throw new Error("Empty content");
-
-        const content = data.content;
-        const audit = calculateAuditMetrics(content);
-
-        await useCredit();
-        setState(s => updateHistory(s, { 
-          generatedContent: content, 
-          metaTitle: data.metaTitle || "",
-          metaDescription: data.metaDescription || "",
-          auditResults: audit,
-          isGeneratingContent: false 
-        }));
-        return; // Success
-      } catch (err: any) {
-        attempts++;
-        console.error(`Attempt ${attempts} failed:`, err);
-        
-        const is503 = err?.message?.includes('503') || err?.status === 503 || JSON.stringify(err).includes('503');
-        
-        if (attempts < maxAttempts) {
-          if (is503) {
-            const delay = 2000 * Math.pow(2, attempts - 1);
-            await sleep(delay);
-            continue;
-          }
-        } else {
-          const errorMessage = typeof err === 'string' ? err : (err?.message || JSON.stringify(err));
-          setState(s => ({ ...s, error: `Failed to generate content after multiple attempts: ${errorMessage}`, isGeneratingContent: false }));
+    try {
+      const response = await withRetry(() => ai.models.generateContent({
+        model: GEMINI_MODEL,
+        contents: prompt,
+        config: { 
+          responseMimeType: "application/json",
+          thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH }
         }
-      }
-    }
+      }));
+
+      const data = safeJsonParse<{ metaTitle: string; metaDescription: string; content: string }>(response.text, {
+        metaTitle: '',
+        metaDescription: '',
+        content: ''
+      });
+      
+      if (!data.content) throw new Error("Empty content");
+
+      const content = data.content;
+      const audit = calculateAuditMetrics(content);
+
+      await useCredit();
+      setState(s => updateHistory(s, { 
+        generatedContent: content, 
+        metaTitle: data.metaTitle || "",
+        metaDescription: data.metaDescription || "",
+        auditResults: audit,
+        isGeneratingContent: false 
+      }));
     } catch (err: any) {
       console.error(err);
       const errorMessage = typeof err === 'string' ? err : (err?.message || JSON.stringify(err));
@@ -733,11 +721,11 @@ export default function OptiWrite() {
         { "metaTitle": "...", "metaDescription": "...", "content": "Updated Markdown content with proper newlines (\\n) for paragraphs and tables..." }
       `;
 
-      const response = await ai.models.generateContent({
+      const response = await withRetry(() => ai.models.generateContent({
         model: GEMINI_MODEL,
         contents: refinePrompt,
         config: { responseMimeType: "application/json" }
-      });
+      }));
 
       const data = safeJsonParse<{ metaTitle: string; metaDescription: string; content: string }>(response.text, {
         metaTitle: '',
@@ -788,10 +776,10 @@ export default function OptiWrite() {
         Return the FAQs in Markdown format starting with an "## Frequently Asked Questions" heading.
       `;
 
-      const response = await ai.models.generateContent({
+      const response = await withRetry(() => ai.models.generateContent({
         model: GEMINI_MODEL,
         contents: prompt,
-      });
+      }));
 
       const faqs = response.text || "";
       await useCredit();
@@ -824,10 +812,10 @@ export default function OptiWrite() {
         Return ONLY the JSON-LD code block.
       `;
 
-      const response = await ai.models.generateContent({
+      const response = await withRetry(() => ai.models.generateContent({
         model: GEMINI_MODEL,
         contents: prompt,
-      });
+      }));
 
       const schema = response.text || "";
       await useCredit();
@@ -1020,6 +1008,7 @@ export default function OptiWrite() {
                 initialTopic={state.selectedTitle || state.primaryKeyword} 
                 content={state.generatedContent}
                 onClose={() => setShowImageGenerator(false)} 
+                onImageGenerated={(url) => setState(s => ({ ...s, featuredImageUrl: url }))}
                 useCredit={useCredit}
                 checkAccess={checkAccess}
               />
