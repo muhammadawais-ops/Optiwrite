@@ -5,7 +5,7 @@
 
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { GoogleGenAI, ThinkingLevel } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { 
@@ -113,7 +113,7 @@ interface AuditResults {
   hardSentences: number;
 }
 
-const GEMINI_MODEL = "gemini-3-flash-preview";
+const GEMINI_MODEL = "gemini-2.5-flash";
 
 const INITIAL_STATE: AppState = {
   contentType: 'blog',
@@ -656,8 +656,7 @@ export default function OptiWrite() {
         model: GEMINI_MODEL,
         contents: prompt,
         config: { 
-          responseMimeType: "application/json",
-          thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH }
+          responseMimeType: "application/json"
         }
       }));
 

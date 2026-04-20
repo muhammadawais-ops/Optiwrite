@@ -172,7 +172,7 @@ export async function generateEmail(request: EmailRequest) {
 
   try {
     const response = await withRetry(() => ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-2.5-flash",
       contents: prompt,
       config: {
         systemInstruction,
@@ -212,7 +212,7 @@ export async function analyzeBusinessDetails(prompt: string) {
 
   try {
     const response = await withRetry(() => ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-2.5-flash",
       contents: `Analyze this business detail: "${prompt}"`,
       config: {
         systemInstruction,
