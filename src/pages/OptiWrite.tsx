@@ -35,7 +35,7 @@ import {
   X,
   Image as ImageIcon
 } from 'lucide-react';
-import { doc, updateDoc, addDoc, collection } from 'firebase/firestore';
+import { doc, updateDoc, addDoc, collection, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { format, parseISO } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
@@ -45,7 +45,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { AuthModal } from '../components/AuthModal';
 import { PaymentModal } from '../components/PaymentModal';
 import { FeaturedImageGenerator } from '../components/FeaturedImageGenerator';
-import { withRetry } from '../lib/aiUtils';
+import { withRetry, getOptimizedModel } from '../lib/aiUtils';
 import { logout } from '../firebase';
 
 // --- Types ---
@@ -149,6 +149,47 @@ const INITIAL_STATE: AppState = {
 };
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+/**
+ * Cache helper for high-scale environments.
+ * Reduces AI costs and provides instant responses for repeated queries.
+ */
+const checkCache = async (key: string) => {
+  try {
+    const cacheRef = doc(db, 'ai_cache', key);
+    const snap = await getDoc(cacheRef);
+    if (snap.exists()) {
+      console.log("[AI Suite Proxy] Cache Hit:", key);
+      return snap.data().response;
+    }
+  } catch (err) {
+    console.error("Cache check error:", err);
+  }
+  return null;
+};
+
+const saveCache = async (key: string, response: any) => {
+  try {
+    const cacheRef = doc(db, 'ai_cache', key);
+    await setDoc(cacheRef, { 
+      response, 
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() // 7 day TTL
+    });
+  } catch (err) {
+    console.error("Cache save error:", err);
+  }
+};
+
+const generateCacheKey = (...args: any[]) => {
+  const str = JSON.stringify(args);
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash) + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return `v1_${Math.abs(hash).toString(16)}`;
+};
 
 export default function OptiWrite() {
   const navigate = useNavigate();
@@ -453,6 +494,13 @@ export default function OptiWrite() {
 
     setState(s => ({ ...s, isGeneratingTitles: true, error: null }));
     try {
+      const cacheKey = generateCacheKey('titles', state.primaryKeyword, state.contentType);
+      const cached = await checkCache(cacheKey);
+      if (cached) {
+        setState(s => updateHistory(s, { titles: cached, isGeneratingTitles: false }));
+        return;
+      }
+
       const prompt = `
         As an expert SEO Content Strategist, generate 5 high-performing, click-worthy (but not clickbait) SEO titles for a ${state.contentType} about "${state.primaryKeyword}".
         
@@ -467,13 +515,17 @@ export default function OptiWrite() {
         Return ONLY a JSON array of strings.
       `;
 
-      const response = await withRetry(() => ai.models.generateContent({
-        model: GEMINI_MODEL,
+      const response = await withRetry((attempt) => ai.models.generateContent({
+        model: getOptimizedModel(attempt, GEMINI_MODEL),
         contents: prompt,
         config: { responseMimeType: "application/json" }
       }));
 
       const titles = safeJsonParse<string[]>(response.text, []);
+      if (titles.length > 0) {
+        await saveCache(cacheKey, titles);
+      }
+      
       await useCredit();
       setState(s => updateHistory(s, { titles, isGeneratingTitles: false }));
     } catch (err: any) {
@@ -496,19 +548,30 @@ export default function OptiWrite() {
 
     setState(s => ({ ...s, isGeneratingVariations: true, error: null }));
     try {
+      const cacheKey = generateCacheKey('variations', state.primaryKeyword);
+      const cached = await checkCache(cacheKey);
+      if (cached) {
+        setState(s => updateHistory(s, { semanticVariations: cached, isGeneratingVariations: false }));
+        return;
+      }
+
       const prompt = `
         Generate 10 semantic variations and LSI (Latent Semantic Indexing) keywords for the primary keyword: "${state.primaryKeyword}".
         These should help in content optimization and covering the topic comprehensively for Google's Helpful Content update.
         Return ONLY a JSON array of strings.
       `;
 
-      const response = await withRetry(() => ai.models.generateContent({
-        model: GEMINI_MODEL,
+      const response = await withRetry((attempt) => ai.models.generateContent({
+        model: getOptimizedModel(attempt, GEMINI_MODEL),
         contents: prompt,
         config: { responseMimeType: "application/json" }
       }));
 
       const variations = safeJsonParse<string[]>(response.text, []);
+      if (variations.length > 0) {
+        await saveCache(cacheKey, variations);
+      }
+      
       await useCredit();
       setState(s => updateHistory(s, { semanticVariations: variations, isGeneratingVariations: false }));
     } catch (err: any) {
@@ -652,8 +715,22 @@ export default function OptiWrite() {
     const prompt = isGuestPost ? guestPostPrompt : blogPrompt;
 
     try {
-      const response = await withRetry(() => ai.models.generateContent({
-        model: GEMINI_MODEL,
+      const cacheKey = generateCacheKey('final_content', state.selectedTitle, state.selectedVariations, state.contentType, state.wordCount);
+      const cached = await checkCache(cacheKey);
+      if (cached) {
+        const audit = calculateAuditMetrics(cached.content);
+        setState(s => updateHistory(s, { 
+          generatedContent: cached.content, 
+          metaTitle: cached.metaTitle || "",
+          metaDescription: cached.metaDescription || "",
+          auditResults: audit,
+          isGeneratingContent: false 
+        }));
+        return;
+      }
+
+      const response = await withRetry((attempt) => ai.models.generateContent({
+        model: getOptimizedModel(attempt, GEMINI_MODEL),
         contents: prompt,
         config: { 
           responseMimeType: "application/json",
@@ -671,6 +748,14 @@ export default function OptiWrite() {
 
       const content = data.content;
       const audit = calculateAuditMetrics(content);
+
+      if (content.length > 500) {
+        await saveCache(cacheKey, { 
+          content, 
+          metaTitle: data.metaTitle, 
+          metaDescription: data.metaDescription 
+        });
+      }
 
       await useCredit();
       setState(s => updateHistory(s, { 
