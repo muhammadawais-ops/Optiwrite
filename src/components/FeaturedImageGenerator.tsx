@@ -19,8 +19,8 @@ interface FeaturedImageGeneratorProps {
   initialTopic?: string;
   content?: string;
   onClose?: () => void;
-  useCredit?: () => Promise<void>;
-  checkAccess?: () => boolean;
+  useCredit?: (amount?: number) => Promise<void>;
+  checkAccess?: (requiredCredits?: number) => boolean;
 }
 
 export const FeaturedImageGenerator: React.FC<FeaturedImageGeneratorProps> = ({ 
