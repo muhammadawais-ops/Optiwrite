@@ -6,52 +6,39 @@
 export const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 export async function withRetry<T>(
-  fn: (attempt: number) => Promise<T>,
-  maxAttempts: number = 4,
-  baseDelay: number = 1000
+  fn: () => Promise<T>,
+  maxAttempts: number = 3,
+  baseDelay: number = 2000
 ): Promise<T> {
   let attempts = 0;
   
   while (attempts < maxAttempts) {
     try {
-      // Pass the attempt number so the caller can switch models if needed
-      return await fn(attempts);
+      return await fn();
     } catch (err: any) {
       attempts++;
       
+      // Check for retryable errors (503, 429)
       const errorMsg = JSON.stringify(err).toLowerCase();
       const isRetryable = 
         errorMsg.includes('503') || 
         errorMsg.includes('429') || 
         errorMsg.includes('service unavailable') || 
         errorMsg.includes('too many requests') ||
-        errorMsg.includes('deadline exceeded') ||
         err?.status === 503 ||
-        err?.status === 429 ||
-        err?.status === 504;
+        err?.status === 429;
 
       if (isRetryable && attempts < maxAttempts) {
-        // Shorter delay initially, then aggressive backoff
         const delay = baseDelay * Math.pow(2, attempts - 1);
-        console.warn(`[AI Suite Scale Guard] Attempt ${attempts} failed (${err?.status || '503'}). Retrying in ${delay}ms...`);
+        console.warn(`AI API error (retryable). Attempt ${attempts} failed. Retrying in ${delay}ms...`, err);
         await sleep(delay);
         continue;
       }
       
+      // If not retryable or max attempts reached, throw the error
       throw err;
     }
   }
   
-  throw new Error("Max attempts reached after " + maxAttempts + " tries.");
-}
-
-/**
- * Enterprise-grade model selection.
- * For 1M+ scale, we recommend using Vertex AI endpoints which have higher quota.
- * This helper allows falling back to more stable models if the primary is busy.
- */
-export function getOptimizedModel(attempt: number, primary: string = 'gemini-3-flash-preview'): string {
-  // If first attempt fails, we might want to try a more reliable (older) engine
-  if (attempt >= 2) return 'gemini-1.5-flash'; 
-  return primary;
+  throw new Error("Max attempts reached");
 }
