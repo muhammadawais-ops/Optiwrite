@@ -12,23 +12,21 @@ import {
   Check
 } from 'lucide-react';
 import { cn } from '../lib/utils';
+
 import { safeJsonParse } from '../lib/jsonUtils';
-import { withRetry } from '../lib/aiUtils';
 
 interface FeaturedImageGeneratorProps {
   initialTopic?: string;
   content?: string;
   onClose?: () => void;
-  onImageGenerated?: (imageUrl: string) => void;
-  useCredit?: (amount?: number) => Promise<void>;
-  checkAccess?: (requiredCredits?: number) => boolean;
+  useCredit?: () => Promise<void>;
+  checkAccess?: () => boolean;
 }
 
 export const FeaturedImageGenerator: React.FC<FeaturedImageGeneratorProps> = ({ 
   initialTopic = '', 
   content = '',
   onClose,
-  onImageGenerated,
   useCredit,
   checkAccess
 }) => {
@@ -88,11 +86,11 @@ export const FeaturedImageGenerator: React.FC<FeaturedImageGeneratorProps> = ({
         Return ONLY JSON.
       `;
 
-      const response = await withRetry(() => ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
         contents: prompt,
         config: { responseMimeType: "application/json" }
-      }));
+      });
 
       const data = safeJsonParse(response.text, {
         visualPrompt: '',
@@ -134,33 +132,54 @@ export const FeaturedImageGenerator: React.FC<FeaturedImageGeneratorProps> = ({
       
       const finalPrompt = `${basePrompt} ${colorContext} The image should have plenty of negative space for text overlay. Do not include any text in the image itself. High resolution, 4k, professional photography or high-end digital art style.`;
 
+      let attempts = 0;
+      const maxAttempts = 3;
       let base64Image = "";
 
-      const response = await withRetry(() => ai.models.generateContent({
-        model: 'gemini-2.5-flash-image',
-        contents: {
-          parts: [{ text: finalPrompt }]
-        },
-        config: {
-          imageConfig: {
-            aspectRatio: "16:9"
+      while (attempts < maxAttempts) {
+        try {
+          const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash-image',
+            contents: {
+              parts: [{ text: finalPrompt }]
+            },
+            config: {
+              imageConfig: {
+                aspectRatio: "16:9"
+              }
+            }
+          });
+
+          for (const part of response.candidates?.[0]?.content?.parts || []) {
+            if (part.inlineData) {
+              base64Image = `data:image/png;base64,${part.inlineData.data}`;
+              break;
+            }
+          }
+
+          if (base64Image) {
+            if (useCredit) await useCredit(2);
+            setGeneratedImage(base64Image);
+            return; // Success
+          } else {
+            throw new Error("Failed to generate image data.");
+          }
+        } catch (err: any) {
+          attempts++;
+          console.error(`Image generation attempt ${attempts} failed:`, err);
+          
+          const is503 = err?.message?.includes('503') || err?.status === 503 || JSON.stringify(err).includes('503');
+          
+          if (attempts < maxAttempts) {
+            if (is503) {
+              const delay = 2000 * Math.pow(2, attempts - 1);
+              await sleep(delay);
+              continue;
+            }
+          } else {
+            throw err;
           }
         }
-      }));
-
-      for (const part of response.candidates?.[0]?.content?.parts || []) {
-        if (part.inlineData) {
-          base64Image = `data:image/png;base64,${part.inlineData.data}`;
-          break;
-        }
-      }
-
-      if (base64Image) {
-        if (useCredit) await useCredit(2);
-        setGeneratedImage(base64Image);
-        return; // Success
-      } else {
-        throw new Error("Failed to generate image data.");
       }
     } catch (err: any) {
       console.error(err);
@@ -284,14 +303,10 @@ export const FeaturedImageGenerator: React.FC<FeaturedImageGeneratorProps> = ({
           // Logo position: opposite of layout
           const logoX = layout === 'left' ? canvas.width - width - padding : padding;
           ctx.drawImage(logoImg, logoX, canvas.height - height - padding, width, height);
-          const url = canvas.toDataURL('image/png');
-          setFinalImage(url);
-          if (onImageGenerated) onImageGenerated(url);
+          setFinalImage(canvas.toDataURL('image/png'));
         };
       } else {
-        const url = canvas.toDataURL('image/png');
-        setFinalImage(url);
-        if (onImageGenerated) onImageGenerated(url);
+        setFinalImage(canvas.toDataURL('image/png'));
       }
     };
   };
