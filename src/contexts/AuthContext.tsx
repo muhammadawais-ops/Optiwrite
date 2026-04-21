@@ -57,7 +57,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const unsubscribe = onSnapshot(userDocRef, async (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.data() as UserProfile;
-        const isAdminEmail = user.email === 'muhammadawais@carpediem.company' || user.email === 'fazalsubhaniwriter@gmail.com';
+        const isAdminEmail = user.email === 'muhammadawais@carpediem.company';
         
         // Sync admin role if email matches but role is not admin
         if (isAdminEmail && data.role !== 'admin') {
@@ -72,7 +72,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           uid: user.uid,
           email: user.email || '',
           displayName: user.displayName || '',
-          role: (user.email === 'muhammadawais@carpediem.company' || user.email === 'fazalsubhaniwriter@gmail.com') ? 'admin' : 'user',
+          role: user.email === 'muhammadawais@carpediem.company' ? 'admin' : 'user',
           credits: 10,
           subscriptionStatus: 'free',
           createdAt: new Date().toISOString(),

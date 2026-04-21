@@ -19,16 +19,14 @@ interface FeaturedImageGeneratorProps {
   initialTopic?: string;
   content?: string;
   onClose?: () => void;
-  onImageGenerated?: (imageUrl: string) => void;
-  useCredit?: (amount?: number) => Promise<void>;
-  checkAccess?: (requiredCredits?: number) => boolean;
+  useCredit?: () => Promise<void>;
+  checkAccess?: () => boolean;
 }
 
 export const FeaturedImageGenerator: React.FC<FeaturedImageGeneratorProps> = ({ 
   initialTopic = '', 
   content = '',
   onClose,
-  onImageGenerated,
   useCredit,
   checkAccess
 }) => {
@@ -305,14 +303,10 @@ export const FeaturedImageGenerator: React.FC<FeaturedImageGeneratorProps> = ({
           // Logo position: opposite of layout
           const logoX = layout === 'left' ? canvas.width - width - padding : padding;
           ctx.drawImage(logoImg, logoX, canvas.height - height - padding, width, height);
-          const url = canvas.toDataURL('image/png');
-          setFinalImage(url);
-          if (onImageGenerated) onImageGenerated(url);
+          setFinalImage(canvas.toDataURL('image/png'));
         };
       } else {
-        const url = canvas.toDataURL('image/png');
-        setFinalImage(url);
-        if (onImageGenerated) onImageGenerated(url);
+        setFinalImage(canvas.toDataURL('image/png'));
       }
     };
   };
