@@ -43,6 +43,21 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["expiryDate", "credits", "ownerUid", "planName"]
+    },
+    "Blog": {
+      "title": "Public Blog Post",
+      "description": "Stores blogs uploaded by the admin.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "author": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "content", "createdAt"]
     }
   },
   "firestore": {
@@ -57,6 +72,10 @@
     "/teams/{domain}": {
       "schema": "Team",
       "description": "Domain-based team subscription"
+    },
+    "/blogs/{blogId}": {
+      "schema": "Blog",
+      "description": "Public community blog posts"
     }
   }
 }
